@@ -290,12 +290,17 @@ class AppL10n {
             'colours, boxes, section order — and transcribes the summary too, '
             'so nothing needs retyping.',
       );
-  String get uploadHandwriting => _('ارفع صور تلخيصاتك', 'Upload page photos');
+  String get uploadHandwriting =>
+      _('ارفع صور تلخيصاتك', 'Upload page photos');
+  String get pickManyImages => _(
+        'تقدر تختار أكتر من صورة مرة واحدة — كل ما زودت صفحات، الأسلوب يبان أوضح.',
+        'Pick several images at once; more pages make the style clearer.',
+      );
   String get analyzingLook => _('بيحلل شكل الصفحة...', 'Reading your layout...');
   String get lookSaved => _('شكل صفحتك اتسجل', 'Layout saved');
-  String get lookAndTextSaved => _(
-        'اتسجل شكل صفحتك ونص تلخيصك كمثال',
-        'Saved your layout, and the summary text as an example',
+  String lookAndPagesSaved(int pages) => _(
+        'اتسجل شكل صفحتك و$pages ${pages == 1 ? "تلخيص" : "تلخيصات"} كأمثلة',
+        'Saved your layout, and $pages ${pages == 1 ? "summary" : "summaries"} as examples',
       );
   String get noLookYet => _('لسه ما حللناش شكل صفحتك', 'No layout read yet');
   String get reanalyze => _('حلّل تاني', 'Read again');

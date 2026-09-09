@@ -12,6 +12,15 @@ import 'summarizer_provider.dart';
 
 const _imageExtensions = ['png', 'jpg', 'jpeg', 'webp'];
 
+/// سقف عدد الصور في التحليل الواحد.
+/// How many images one analysis takes.
+///
+/// حد الطلب عند جوجل حوالي 20 ميجا، والأسلوب بيبان من كام صفحة — الصور
+/// الزيادة بتكبّر الطلب من غير ما تحسّن الوصف.
+/// Google's request cap is about 20 MB, and a handful of pages is enough to
+/// show the habit; more images inflate the request without sharpening it.
+const _maxImages = 6;
+
 /// بطاقة تحليل شكل صفحة المستخدم من صور كراسته.
 /// The card that reads the user's page layout from notebook photos.
 ///
@@ -39,21 +48,21 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
     });
 
     try {
-      final files = <LectureFile>[];
-      // بنجمع الصور واحدة واحدة: ديالوج المتصفح بيرجّع ملف واحد في المرة،
-      // والتحليل بيتحسن مع أكتر من صفحة.
-      // Collected one at a time: the browser dialog returns a single file per
-      // open, and the analysis improves with more than one page.
-      final picked = await pickLocalFile(extensions: _imageExtensions);
-      if (picked == null) {
+      final picked = await pickLocalFiles(extensions: _imageExtensions);
+      if (picked.isEmpty) {
         if (mounted) setState(() => _busy = false);
         return;
       }
-      files.add(LectureFile(
-        name: picked.name,
-        mimeType: picked.mimeType,
-        bytes: picked.bytes,
-      ));
+
+      // الصور كلها في نداء واحد: أرخص على الحصة، والأهم إن الموديل بيشوفهم
+      // مع بعض فيستنتج العادة المشتركة بدل ما يوصف كل صفحة لوحدها.
+      // All images ride one call: cheaper on quota, and the model sees them
+      // together so it infers the shared habit instead of describing each page
+      // in isolation.
+      final files = [
+        for (final f in picked.take(_maxImages))
+          LectureFile(name: f.name, mimeType: f.mimeType, bytes: f.bytes),
+      ];
 
       final analysis =
           await ref.read(activeSummarizerProvider).analyzeStyle(files);
@@ -65,22 +74,25 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
         sourceCount: files.length,
       );
 
-      // نفس الصورة بتدي الشكل **والنص**: النص بيتحفظ كمثال أسلوب، فالمستخدم
-      // مش محتاج يكتب تلخيصاته بإيده تاني.
-      // The same photo yields the look **and** the words: the words are stored
-      // as a style sample, so nothing has to be retyped by hand.
-      if (analysis.hasTranscript) {
+      // كل صفحة بتتحفظ كمثال أسلوب لوحدها، فالمستخدم مش محتاج يكتب
+      // تلخيصاته بإيده.
+      // Each page is stored as its own style example, so nothing has to be
+      // retyped by hand.
+      final pages = analysis.usablePages;
+      for (var i = 0; i < pages.length; i++) {
         await repo.addStyleSample(StyleSample(
           id: '',
-          title: analysis.title.trim().isEmpty
-              ? picked.name.replaceAll(RegExp(r'\.[^.]+$'), '')
-              : analysis.title.trim(),
-          body: analysis.transcript.trim(),
+          title: pages[i].title.isEmpty
+              ? (i < files.length
+                  ? files[i].name.replaceAll(RegExp(r'\.[^.]+$'), '')
+                  : '')
+              : pages[i].title,
+          body: pages[i].transcript,
           subjectId: widget.subjectId,
           createdAt: DateTime.now(),
         ));
-        ref.invalidate(styleSamplesProvider);
       }
+      if (pages.isNotEmpty) ref.invalidate(styleSamplesProvider);
 
       ref.invalidate(styleProfilesProvider);
 
@@ -88,9 +100,9 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
         setState(() => _busy = false);
         showSnack(
           context,
-          analysis.hasTranscript
-              ? context.l.lookAndTextSaved
-              : context.l.lookSaved,
+          pages.isEmpty
+              ? context.l.lookSaved
+              : context.l.lookAndPagesSaved(pages.length),
         );
       }
     } on SummarizerException catch (e) {
@@ -235,7 +247,7 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              l.handwritingNote,
+              '${l.pickManyImages}\n${l.handwritingNote}',
               textAlign: TextAlign.center,
               style: Theme.of(context)
                   .textTheme

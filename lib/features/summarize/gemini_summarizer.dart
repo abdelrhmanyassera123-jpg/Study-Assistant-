@@ -217,11 +217,23 @@ class GeminiSummarizer implements Summarizer {
       }
     }
 
+    // الحد على الطلب كله مش على الصورة الواحدة، والترميز base64 بيكبّر
+    // الحجم حوالي الثلث — فبنقيس المجموع قبل ما نبعت.
+    // The cap applies to the whole request, not one image, and base64 inflates
+    // by about a third, so the total is checked before sending.
+    final totalMb = images.fold<double>(0, (sum, i) => sum + i.megabytes);
+    if (totalMb * 1.34 > 18) {
+      throw SummarizerException(
+        'الصور مع بعض كبيرة جدًا (${totalMb.toStringAsFixed(1)} ميجا).',
+        hint: 'ارفع صور أقل، أو صغّر حجمها.',
+      );
+    }
+
     final result = await _postJson({
       'action': 'json',
       'model': config.model,
       'system': VisualPrompts.analysisSystem,
-      'prompt': VisualPrompts.analysisPrompt,
+      'prompt': VisualPrompts.analysisPrompt(images.length),
       'files': [
         for (final image in images)
           {'mime_type': image.mimeType, 'data': base64Encode(image.bytes)},

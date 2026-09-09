@@ -41,61 +41,85 @@ String _mimeFromName(String name) => switch (name.split('.').last.toLowerCase())
       _ => 'application/octet-stream',
     };
 
-Future<PickedFile?> pickLocalFile({required List<String> extensions}) {
-  final completer = Completer<PickedFile?>();
+Future<PickedFile?> pickLocalFile({required List<String> extensions}) async {
+  final files = await pickLocalFiles(extensions: extensions, multiple: false);
+  return files.isEmpty ? null : files.first;
+}
+
+/// بيفتح ديالوج اختيار الملفات ويرجّع محتوى اللي اتختار.
+/// Opens the file dialog and returns the contents of whatever was chosen.
+Future<List<PickedFile>> pickLocalFiles({
+  required List<String> extensions,
+  bool multiple = true,
+}) {
+  final completer = Completer<List<PickedFile>>();
 
   final input = web.HTMLInputElement()
     ..type = 'file'
     ..accept = extensions.map((e) => '.$e').join(',')
-    ..multiple = false
+    ..multiple = multiple
     ..style.display = 'none';
 
-  void finish(PickedFile? file) {
+  void finish(List<PickedFile> files) {
     if (completer.isCompleted) return;
     input.remove();
-    completer.complete(file);
+    completer.complete(files);
   }
 
   input.addEventListener(
     'change',
     (web.Event _) {
-      final files = input.files;
-      if (files == null || files.length == 0) {
-        finish(null);
+      final selected = input.files;
+      if (selected == null || selected.length == 0) {
+        finish(const []);
         return;
       }
 
-      final file = files.item(0)!;
-      final reader = web.FileReader();
+      // القراءة غير متزامنة لكل ملف، فبنستنى الكل قبل ما نرجّع — والترتيب
+      // بيتحافظ عليه بالفهرس مش بترتيب الوصول.
+      // Each file reads asynchronously, so we wait for all of them, keeping the
+      // user's order by index rather than by whichever finishes first.
+      final total = selected.length;
+      final results = List<PickedFile?>.filled(total, null);
+      var pending = total;
 
-      reader.addEventListener(
-        'load',
-        (web.Event _) {
-          final buffer = reader.result as JSArrayBuffer?;
-          if (buffer == null) {
-            finish(null);
-            return;
-          }
-          finish(PickedFile(
-            name: file.name,
-            bytes: buffer.toDart.asUint8List(),
-            // بعض المتصفحات بتسيب النوع فاضي — بنستنتجه من الامتداد وقتها.
-            // Some browsers leave the type blank; fall back to the extension.
-            mimeType: file.type.isNotEmpty
-                ? file.type
-                : _mimeFromName(file.name),
-          ));
-        }.toJS,
-      );
+      void settle() {
+        if (--pending > 0) return;
+        finish(results.whereType<PickedFile>().toList());
+      }
 
-      reader.addEventListener('error', ((web.Event _) => finish(null)).toJS);
-      reader.readAsArrayBuffer(file);
+      for (var i = 0; i < total; i++) {
+        final index = i;
+        final file = selected.item(i)!;
+        final reader = web.FileReader();
+
+        reader.addEventListener(
+          'load',
+          (web.Event _) {
+            final buffer = reader.result as JSArrayBuffer?;
+            if (buffer != null) {
+              results[index] = PickedFile(
+                name: file.name,
+                bytes: buffer.toDart.asUint8List(),
+                // بعض المتصفحات بتسيب النوع فاضي — بنستنتجه من الامتداد وقتها.
+                // Some browsers leave the type blank; fall back to the extension.
+                mimeType:
+                    file.type.isNotEmpty ? file.type : _mimeFromName(file.name),
+              );
+            }
+            settle();
+          }.toJS,
+        );
+
+        reader.addEventListener('error', ((web.Event _) => settle()).toJS);
+        reader.readAsArrayBuffer(file);
+      }
     }.toJS,
   );
 
   // المتصفحات الحديثة بتبعت 'cancel' لما المستخدم يقفل الديالوج من غير اختيار.
   // Modern browsers fire 'cancel' when the dialog closes with nothing chosen.
-  input.addEventListener('cancel', ((web.Event _) => finish(null)).toJS);
+  input.addEventListener('cancel', ((web.Event _) => finish(const [])).toJS);
 
   web.document.body!.append(input);
   input.click();

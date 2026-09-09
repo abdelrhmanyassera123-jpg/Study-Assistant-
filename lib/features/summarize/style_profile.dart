@@ -53,9 +53,36 @@ class StyleProfile {
   /// among the accents. Taken literally they produce a white heading on white
   /// paper, or black on black. Anything merely too pale is darkened instead of
   /// being thrown away.
+  /// أسماء الألوان الشائعة — الموديل بيرجّع "red" بدل "#RRGGBB" أحيانًا،
+  /// والرفض وقتها بيفضّي القايمة كلها.
+  /// Common colour names: the model sometimes answers "red" instead of
+  /// "#RRGGBB", and rejecting those empties the whole list.
+  static const _namedColors = <String, int>{
+    'red': 0xD32F2F, 'أحمر': 0xD32F2F,
+    'blue': 0x1565C0, 'أزرق': 0x1565C0,
+    'green': 0x2E7D32, 'أخضر': 0x2E7D32,
+    'orange': 0xEF6C00, 'برتقالي': 0xEF6C00,
+    'purple': 0x6A1B9A, 'بنفسجي': 0x6A1B9A,
+    'pink': 0xD81B60, 'وردي': 0xD81B60,
+    'brown': 0x5D4037, 'بني': 0x5D4037,
+    'teal': 0x00796B, 'تركوازي': 0x00796B,
+    'yellow': 0xF9A825, 'أصفر': 0xF9A825,
+    'gold': 0xF9A825, 'ذهبي': 0xF9A825,
+  };
+
   static Color? _parseColor(Object? v) {
     if (v is! String) return null;
-    final hex = v.replaceAll('#', '').trim();
+    final raw = v.trim().toLowerCase();
+
+    final named = _namedColors[raw] ?? _namedColors[v.trim()];
+    if (named != null) return Color(0xFF000000 | named);
+
+    var hex = raw.replaceAll('#', '');
+    // الصيغة المختصرة #abc بتتمدد لـ #aabbcc.
+    // The shorthand #abc expands to #aabbcc.
+    if (hex.length == 3) {
+      hex = hex.split('').map((c) => '$c$c').join();
+    }
     if (hex.length != 6) return null;
     final value = int.tryParse(hex, radix: 16);
     if (value == null) return null;
@@ -199,41 +226,70 @@ class SummaryPage {
       ['# $title', for (final b in blocks) b.toPlainText()].join('\n\n');
 }
 
-/// ناتج تحليل صورة من كراسة المستخدم: شكل الصفحة **ونص** التلخيص اللي فيها.
-/// What one notebook photo yields: the page's look **and** the summary written
-/// on it.
-///
-/// الاتنين بيتطلبوا في نداء واحد بقصد — الحصة المجانية محدودة، وكل صورة
-/// بتديك المعلومتين مرة واحدة.
-/// Both come from a single call on purpose: the free quota is tight, and one
-/// photo can answer both questions at once.
+/// صفحة واحدة اتقروت من كراسة المستخدم.
+/// One page read out of the user's notebook.
 @immutable
-class StyleAnalysis {
-  const StyleAnalysis({
-    required this.profile,
-    this.title = '',
-    this.transcript = '',
-  });
+class AnalyzedPage {
+  const AnalyzedPage({required this.title, required this.transcript});
 
-  final StyleProfile profile;
-
-  /// عنوان الصفحة زي ما هو مكتوب.
-  /// The page's own heading.
   final String title;
-
-  /// نص التلخيص المكتوب بخط اليد، منقول حرفيًا.
-  /// The handwritten summary, transcribed as written.
   final String transcript;
 
-  bool get hasTranscript => transcript.trim().length > 30;
+  /// سطرين مش تلخيص — بنتجاهل القراءات الفاشلة.
+  /// A couple of lines isn't a summary; failed reads are ignored.
+  bool get isUsable => transcript.trim().length > 30;
 
-  factory StyleAnalysis.fromJson(Map<String, dynamic> m) => StyleAnalysis(
-        profile: StyleProfile.fromJson(
-          (m['look'] as Map<String, dynamic>?) ?? m,
-        ),
-        title: (m['title'] as String?) ?? '',
-        transcript: (m['transcript'] as String?) ?? '',
+  factory AnalyzedPage.fromJson(Map<String, dynamic> m) => AnalyzedPage(
+        title: (m['title'] as String?)?.trim() ?? '',
+        transcript: (m['transcript'] as String?)?.trim() ?? '',
       );
+}
+
+/// ناتج تحليل صور كراسة المستخدم: شكل صفحاته **ونص** كل تلخيص فيها.
+/// What the notebook photos yield: the page layout **and** the summary written
+/// on each one.
+///
+/// الشكل واحد لكل الصفحات لأنه أسلوب الطالب مش خاصية صفحة، أما النصوص
+/// فواحد لكل صورة — كل واحد بيبقى مثال أسلوب لوحده.
+/// The layout is shared because it is the student's habit rather than a
+/// property of one page; the transcripts are per image, each becoming its own
+/// style example.
+@immutable
+class StyleAnalysis {
+  const StyleAnalysis({required this.profile, this.pages = const []});
+
+  final StyleProfile profile;
+  final List<AnalyzedPage> pages;
+
+  List<AnalyzedPage> get usablePages =>
+      pages.where((p) => p.isUsable).toList();
+
+  /// تحويل آمن: الخرايط الجوّانية بتوصل أحيانًا بنوع عام (من jsonb أو من
+  /// فك ترميز متداخل)، والتحويل المباشر بيرمي استثناء ويضيّع الرد كله.
+  /// A defensive cast: nested maps sometimes arrive loosely typed (from jsonb
+  /// or a nested decode), where a direct cast throws and loses the whole reply.
+  static Map<String, dynamic>? _asMap(Object? v) =>
+      v is Map ? v.map((k, value) => MapEntry('$k', value)) : null;
+
+  factory StyleAnalysis.fromJson(Map<String, dynamic> m) {
+    final look = _asMap(m['look']) ?? m;
+
+    final pages = (m['pages'] as List<dynamic>? ?? const [])
+        .map(_asMap)
+        .whereType<Map<String, dynamic>>()
+        .map(AnalyzedPage.fromJson)
+        .toList();
+
+    // بنقبل كمان شكل الصفحة الواحدة القديم عشان أي رد مش متبع للمخطط
+    // ما يضيعش.
+    // The older single-page shape is still accepted so a reply that strays
+    // from the schema isn't thrown away.
+    if (pages.isEmpty && (m['transcript'] as String?)?.trim().isNotEmpty == true) {
+      pages.add(AnalyzedPage.fromJson(m));
+    }
+
+    return StyleAnalysis(profile: StyleProfile.fromJson(look), pages: pages);
+  }
 }
 
 /// البرومبتات الخاصة بالتحليل البصري والتلخيص المنظم.
@@ -242,17 +298,20 @@ class VisualPrompts {
   const VisualPrompts._();
 
   static const analysisSystem = '''
-أنت بتحلل صور تلخيصات مكتوبة بخط اليد. مطلوب منك حاجتين من نفس الصورة:
+أنت بتحلل صور تلخيصات مكتوبة بخط اليد. ممكن توصلك صورة واحدة أو كذا صورة.
+مطلوب منك حاجتين:
 
-**أولاً: شكل الصفحة**
+**أولاً: شكل الصفحة** — وصف واحد مشترك لكل الصور
 - الألوان المستخدمة وأماكنها (عناوين، تحديد، تحذيرات).
 - ترتيب الأقسام على الصفحة من فوق لتحت.
 - استخدام المربعات والإطارات والخطوط الفاصلة.
 - التنقيط والترقيم.
 - كثافة الصفحة: مزحومة ولا فيها مسافات.
 
-**ثانيًا: نص التلخيص**
-انقل اللي مكتوب في الصفحة **حرفيًا** بنفس ترتيبه وتقسيمه وعناوينه.
+لو الصور مختلفة شوية في التنسيق، اوصف العادة الغالبة عليهم.
+
+**ثانيًا: نص كل صفحة** — عنصر مستقل لكل صورة بنفس ترتيب ورودها
+انقل اللي مكتوب في كل صفحة **حرفيًا** بنفس ترتيبه وتقسيمه وعناوينه.
 - متلخصش ومتختصرش ومتعيدش صياغة — ده نقل مش تلخيص.
 - حافظ على نبرة الطالب ولهجته زي ما كتبها بالظبط.
 - علّم العناوين بـ ** ** والنقط بـ -.
@@ -261,20 +320,25 @@ class VisualPrompts {
 رد بـ JSON بالشكل ده بالظبط:
 {
   "look": {
-    "accent_colors": ["#RRGGBB", ...],
+    "accent_colors": ["#RRGGBB", ...],   // هيكس بس، مش أسماء ألوان
     "section_order": ["اسم القسم زي ما بيسميه أو وصفه", ...],
     "uses_boxes": true/false,
     "uses_numbering": true/false,
     "density": "compact" | "medium" | "airy",
     "notes": "وصف مختصر لأي عادة تنسيق مميزة"
   },
-  "title": "عنوان الصفحة زي ما هو مكتوب",
-  "transcript": "نص التلخيص كامل منقول حرفيًا"
+  "pages": [
+    {"title": "عنوان الصفحة زي ما هو مكتوب", "transcript": "نص التلخيص كامل منقول حرفيًا"}
+  ]
 }
+
+لازم يكون عدد العناصر في pages مساوي لعدد الصور المرفقة.
 ''';
 
-  static const analysisPrompt =
-      'حلّل شكل الصفحة المرفقة وانقل نصها، ورد بالـ JSON المطلوب.';
+  static String analysisPrompt(int pageCount) => pageCount == 1
+      ? 'حلّل شكل الصفحة المرفقة وانقل نصها، ورد بالـ JSON المطلوب.'
+      : 'حلّل شكل الـ $pageCount صفحات المرفقة (وصف واحد مشترك) وانقل نص كل '
+          'صفحة لوحدها بنفس ترتيبها، ورد بالـ JSON المطلوب.';
 
   static String blocksSystem(StyleProfile profile) => '''
 أنت بتلخص محاضرات دراسية بأسلوب طالب معيّن وبشكل صفحته بالظبط.
