@@ -113,9 +113,22 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   .labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l.autoModel),
+              subtitle: Text(l.autoModelHint, style: const TextStyle(height: 1.5)),
+              value: settings.autoModel,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).setAutoModel(v),
+            ),
+            const SizedBox(height: 12),
 
-            if (_models != null && _models!.isNotEmpty) ...[
+            // في الوضع التلقائي مفيش داعي لقايمة من 97 موديل — اللي يهم هو
+            // استهلاكك، وده معروض تحت.
+            // In auto mode a list of 97 models serves nobody; what matters is
+            // your usage, shown below.
+            if (!settings.autoModel && _models != null && _models!.isNotEmpty) ...[
               Row(
                 children: [
                   Icon(Icons.check_circle_rounded, size: 15, color: scheme.primary),
@@ -179,7 +192,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   }
                 },
               ),
-            ] else if (_loading)
+            ] else if (!settings.autoModel && _loading)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
@@ -190,6 +203,49 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   ),
                 ),
               ),
+
+            if (settings.autoModel) ...[
+              Text(l.usageTitle,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              if (usage.counts.isEmpty)
+                Text(
+                  l.noUsageYet,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                )
+              else
+                for (final entry in (usage.counts.entries.toList()
+                  ..sort((a, b) => b.value.compareTo(a.value))))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            textDirection: TextDirection.ltr,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        Text(
+                          usage.describe(entry.key, isAr: l.isAr),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+              const SizedBox(height: 16),
+            ],
 
             if (_error != null) ...[
               Container(

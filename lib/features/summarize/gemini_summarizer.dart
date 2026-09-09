@@ -26,6 +26,11 @@ class GeminiConfig {
   final String anonKey;
   final String model;
 
+  /// "auto" بتخلي الخدمة تجرب الموديلات بالترتيب وتنتقل لما واحد يفشل.
+  /// "auto" lets the service walk its ranked list, moving on as each fails.
+  String get requestedModel => model.isEmpty ? 'auto' : model;
+  bool get isAuto => requestedModel == 'auto';
+
   /// سقف معقول: موديلات Gemini سياقها كبير، بس مش بلا حدود.
   /// A sane ceiling; Gemini's context is large but not unlimited.
   static const inputTokenBudget = 200000;
@@ -55,9 +60,12 @@ class GeminiSummarizer implements Summarizer {
   /// بيستخرج الحد من رسالة 429 — الطريقة الوحيدة لمعرفته، مفيش API بيعرضه.
   /// Pulls the limit out of a 429 body; there is no API that exposes it.
   void _learnLimit(String body) {
-    final match = RegExp(r'limit:\s*(\d+)').firstMatch(body);
-    final limit = int.tryParse(match?.group(1) ?? '');
-    if (limit != null) onQuotaLimit?.call(config.model, limit);
+    final limit = int.tryParse(
+      RegExp(r'limit:\s*(\d+)').firstMatch(body)?.group(1) ?? '',
+    );
+    final model =
+        RegExp(r'model:\s*([\w.\-]+)').firstMatch(body)?.group(1) ?? config.model;
+    if (limit != null && model.isNotEmpty) onQuotaLimit?.call(model, limit);
   }
 
   Map<String, String> get _headers => {
@@ -72,12 +80,6 @@ class GeminiSummarizer implements Summarizer {
     LectureFile? file,
     required List<StyleSample> samples,
   }) async* {
-    if (config.model.isEmpty) {
-      throw const SummarizerException(
-        'مفيش موديل متحدد.',
-        hint: 'اختار موديل من إعدادات التلخيص.',
-      );
-    }
     if (config.accessToken.isEmpty) {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
@@ -108,7 +110,7 @@ class GeminiSummarizer implements Summarizer {
       ..headers.addAll(_headers)
       ..body = jsonEncode({
         'action': 'summarize',
-        'model': config.model,
+        'model': config.requestedModel,
         'system': StudyPrompt.system,
         'prompt': prompt,
         if (file != null)
@@ -117,8 +119,6 @@ class GeminiSummarizer implements Summarizer {
             'data': base64Encode(file.bytes),
           },
       });
-
-    onRequest?.call(config.model);
 
     final http.StreamedResponse response;
     try {
@@ -156,6 +156,16 @@ class GeminiSummarizer implements Summarizer {
 
       final error = chunk['error'];
       if (error != null) throw SummarizerException('$error');
+
+      // الخدمة بتقول في أول سطر أي موديل رد — في الوضع التلقائي ده الوحيد
+      // اللي بيعرّفنا نحسب الاستهلاك على مين.
+      // The service names the answering model on the first line; in auto mode
+      // that is the only way to know whose quota was spent.
+      final answered = chunk['model'] as String?;
+      if (answered != null && answered.isNotEmpty) {
+        onRequest?.call(answered);
+        continue;
+      }
 
       final piece = chunk['text'] as String?;
       if (piece != null && piece.isNotEmpty) yield piece;
@@ -231,7 +241,7 @@ class GeminiSummarizer implements Summarizer {
 
     final result = await _postJson({
       'action': 'json',
-      'model': config.model,
+      'model': config.requestedModel,
       'system': VisualPrompts.analysisSystem,
       'prompt': VisualPrompts.analysisPrompt(images.length),
       'files': [
@@ -254,12 +264,6 @@ class GeminiSummarizer implements Summarizer {
     required List<StyleSample> samples,
     required StyleProfile profile,
   }) async {
-    if (config.model.isEmpty) {
-      throw const SummarizerException(
-        'مفيش موديل متحدد.',
-        hint: 'اختار موديل من إعدادات التلخيص.',
-      );
-    }
     if (file != null && file.isTooBig) {
       throw SummarizerException(
         'الملف كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
@@ -268,7 +272,7 @@ class GeminiSummarizer implements Summarizer {
 
     final result = await _postJson({
       'action': 'json',
-      'model': config.model,
+      'model': config.requestedModel,
       'system': VisualPrompts.blocksSystem(profile),
       'prompt': StudyPrompt.build(
         lectureText: lectureText,
@@ -299,8 +303,6 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
 
-    if (payload['action'] == 'json') onRequest?.call(config.model);
-
     final http.Response response;
     try {
       response = await _client
@@ -328,12 +330,18 @@ class GeminiSummarizer implements Summarizer {
     final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final error = body['error'];
     if (error != null) throw SummarizerException('$error');
+
+    final answered = body['model'] as String?;
+    if (answered != null && answered.isNotEmpty) onRequest?.call(answered);
+
     return body['result'];
   }
 
   String _statusMessage(int status) => switch (status) {
         401 || 403 => 'الخدمة رفضت الطلب — سجّل خروج ودخول تاني.',
-        404 => 'الموديل "${config.model}" مش متاح لمفتاحك.',
+        404 => config.isAuto
+            ? 'مفيش موديل متاح لمفتاحك دلوقتي.'
+            : 'الموديل "${config.model}" مش متاح لمفتاحك.',
         429 => 'خلصت حصتك المجانية من الموديل ده.',
         500 => 'المفتاح ناقص أو غلط في الخدمة.',
         // 503 شائع جدًا على الخطة المجانية — الفنكشن بتعيد المحاولة 3 مرات
@@ -349,9 +357,12 @@ class GeminiSummarizer implements Summarizer {
       };
 
   String? _statusHint(int status) => switch (status) {
-        404 => 'اختار موديل تاني من إعدادات التلخيص.',
-        429 => 'استنى دقيقة، أو اختار موديل أقدم من الإعدادات — '
-            'الموديلات الأحدث حصتها المجانية أضيق (gemini-2.5-flash أوسع).',
+        404 => config.isAuto
+            ? 'اتأكد إن المفتاح شغال من إعدادات التلخيص.'
+            : 'شغّل الاختيار التلقائي من إعدادات التلخيص.',
+        429 => config.isAuto
+            ? 'كل الموديلات المتاحة خلصت حصتها — استنى دقيقة وجرّب تاني.'
+            : 'شغّل الاختيار التلقائي عشان ينتقل لموديل تاني لوحده.',
         503 => 'استنى دقيقة وجرّب تاني، أو غيّر الموديل من الإعدادات '
             '(gemini-2.5-flash عادة أقل ازدحامًا).',
         546 => 'ارفع صور أقل في المرة الواحدة، أو ملف PDF أصغر.',

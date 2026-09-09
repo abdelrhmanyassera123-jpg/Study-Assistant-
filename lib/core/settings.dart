@@ -17,6 +17,7 @@ class AppSettings {
     this.roundsBeforeLongBreak = 4,
     this.autoStartNext = false,
     this.geminiModel = '',
+    this.autoModel = true,
     this.uiScale = 1.0,
   });
 
@@ -28,9 +29,18 @@ class AppSettings {
   final int roundsBeforeLongBreak;
   final bool autoStartNext;
 
-  /// موديل Gemini المستخدم في التلخيص.
-  /// The Gemini model used for summarizing.
+  /// موديل Gemini المستخدم لما الاختيار يدوي.
+  /// The Gemini model used when the choice is manual.
   final String geminiModel;
+
+  /// يسيب الخدمة تختار الموديل وتنتقل للي بعده لما واحد يفشل.
+  /// Lets the service pick the model and move on when one fails.
+  ///
+  /// مش كل موديل شغال على كل مفتاح — بعضهم 404 وبعضهم حصته خلصت — والاختيار
+  /// اليدوي بيحمّل المستخدم معرفة مالهاش لازمة.
+  /// Not every model works on every key — some 404, some are out of quota — and
+  /// choosing by hand makes that the user's problem for no benefit.
+  final bool autoModel;
 
   /// حجم النص في التطبيق كله. موجود لأن Flutter على الويب بيبتلع
   /// Ctrl+عجلة الماوس قبل ما توصل للمتصفح، فزوم المتصفح مش شغال جوه التطبيق.
@@ -49,6 +59,7 @@ class AppSettings {
     int? roundsBeforeLongBreak,
     bool? autoStartNext,
     String? geminiModel,
+    bool? autoModel,
     double? uiScale,
   }) {
     return AppSettings(
@@ -60,6 +71,7 @@ class AppSettings {
       roundsBeforeLongBreak: roundsBeforeLongBreak ?? this.roundsBeforeLongBreak,
       autoStartNext: autoStartNext ?? this.autoStartNext,
       geminiModel: geminiModel ?? this.geminiModel,
+      autoModel: autoModel ?? this.autoModel,
       uiScale: uiScale ?? this.uiScale,
     );
   }
@@ -83,6 +95,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _kAuto = 'auto_start';
   static const _kGeminiModel = 'gemini_model';
   static const _kUiScale = 'ui_scale';
+  static const _kAutoModel = 'auto_model';
 
   SharedPreferences? _prefs;
 
@@ -101,6 +114,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       roundsBeforeLongBreak: p.getInt(_kRounds) ?? 4,
       autoStartNext: p.getBool(_kAuto) ?? false,
       geminiModel: p.getString(_kGeminiModel) ?? '',
+      autoModel: p.getBool(_kAutoModel) ?? true,
       uiScale: p.getDouble(_kUiScale) ?? 1.0,
     );
   }
@@ -108,6 +122,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   void setUiScale(double scale) {
     state = state.copyWith(uiScale: scale);
     _prefs?.setDouble(_kUiScale, scale);
+  }
+
+  void setAutoModel(bool auto) {
+    state = state.copyWith(autoModel: auto);
+    _prefs?.setBool(_kAutoModel, auto);
   }
 
   void setGeminiModel(String model) {

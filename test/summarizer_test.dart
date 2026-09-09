@@ -29,6 +29,7 @@ http.Client fakeFunction(
   List<String> chunks, {
   int status = 200,
   String errorBody = '{"error":"nope"}',
+  String? answeredBy,
   Map<String, dynamic>? errorLine,
   bool splitAcrossPackets = false,
   void Function(http.BaseRequest req, Map<String, dynamic> body)? capture,
@@ -44,6 +45,7 @@ http.Client fakeFunction(
     }
 
     final lines = <String>[
+      if (answeredBy != null) jsonEncode({'model': answeredBy}),
       if (errorLine != null) jsonEncode(errorLine),
       for (final c in chunks) jsonEncode({'text': c}),
       jsonEncode({'done': true}),
@@ -154,20 +156,47 @@ void main() {
       );
     });
 
-    test('refuses when no model is selected', () {
+    test('asks for automatic selection when no model is pinned', () async {
+      // الموديل الفاضي مش خطأ: معناه سيب الخدمة تختار وتنتقل لما واحد يفشل.
+      // An empty model isn't an error: it means let the service choose and move
+      // on when one fails.
+      Map<String, dynamic>? body;
       final s = GeminiSummarizer(
         const GeminiConfig(
           functionUrl: 'https://x/functions/v1/summarize',
           accessToken: 'jwt',
           anonKey: 'anon',
         ),
-        client: fakeFunction(['x']),
+        client: fakeFunction(['ok'], capture: (_, b) => body = b),
       );
 
-      expect(
-        s.summarize(lectureText: 'x', samples: const []),
-        emitsError(isA<SummarizerException>()),
+      await s.summarize(lectureText: 'x', samples: const []).join();
+
+      expect(body!['model'], 'auto');
+    });
+
+    test('counts usage against the model that actually answered', () async {
+      // في الوضع التلقائي الخدمة هي اللي بتختار، فالعدّاد لازم يمشي على اللي
+      // ردّ مش على اللي طلبناه.
+      // In auto mode the service chooses, so usage must follow the model that
+      // answered rather than the one requested.
+      final recorded = <String>[];
+      final s = GeminiSummarizer(
+        const GeminiConfig(
+          functionUrl: 'https://x/functions/v1/summarize',
+          accessToken: 'jwt',
+          anonKey: 'anon',
+        ),
+        client: fakeFunction(['ok'], answeredBy: 'gemini-2.5-flash'),
+        onRequest: recorded.add,
       );
+
+      final out = await s.summarize(lectureText: 'x', samples: const []).join();
+
+      expect(recorded, ['gemini-2.5-flash']);
+      // سطر الموديل مش جزء من التلخيص.
+      // The model line is not part of the summary.
+      expect(out, 'ok');
     });
 
     test('refuses before calling anything when signed out', () {

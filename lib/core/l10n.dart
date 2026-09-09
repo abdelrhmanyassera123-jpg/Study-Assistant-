@@ -274,6 +274,17 @@ class AppL10n {
         'You must be signed in to use Gemini.',
       );
   String get chooseModelFirst => _('اختار موديل الأول', 'Choose a model first');
+  String get autoModel => _('اختيار تلقائي', 'Pick automatically');
+  String get autoModelHint => _(
+        'الخدمة بتبدأ بأفضل موديل متاح وتنتقل للي بعده لو حصته خلصت أو كان '
+            'مزحوم — من غير ما تعمل حاجة.',
+        'The service starts with the best available model and moves to the next '
+            'when one is out of quota or busy, with nothing to do on your side.',
+      );
+  String get autoLabel => _('تلقائي', 'Automatic');
+  String get lastUsedModel => _('آخر موديل رد', 'Last model used');
+  String get usageTitle => _('استهلاكك النهاردة', 'Your usage today');
+  String get noUsageYet => _('لسه ما استخدمتش حاجة النهاردة', 'Nothing used today');
   String get attachedFile => _('ملف مرفق', 'Attached file');
   String get modelReadsFile => _(
         'الموديل هيقرا الملف بنفسه — بيشتغل مع الـ PDF المكتوب والمسكون.',

@@ -26,7 +26,7 @@ final activeSummarizerProvider = Provider<Summarizer>((ref) {
     // token is never reused.
     accessToken: ref.watch(accessTokenProvider) ?? '',
     anonKey: SupabaseConfig.anonKey,
-    model: settings.geminiModel,
+    model: settings.autoModel ? '' : settings.geminiModel,
   ),
     onRequest: (model) => ref.read(modelUsageProvider.notifier).record(model),
     onQuotaLimit: (model, limit) =>

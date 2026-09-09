@@ -13,6 +13,7 @@ import 'document_text.dart';
 import 'export_page.dart';
 import 'file_input.dart';
 import 'model_settings_sheet.dart';
+import 'model_usage.dart';
 import 'style_profile.dart';
 import 'style_samples_page.dart';
 import 'summary_page_view.dart';
@@ -220,7 +221,9 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     // المستخدم يضغط ويستنى ويلاقي رسالة خطأ.
     // No model means no summary. Disable the button and say why, rather than
     // letting the user press it and wait for an error.
-    final modelChosen = ref.watch(settingsProvider).geminiModel.isNotEmpty;
+    final appSettings = ref.watch(settingsProvider);
+    final modelChosen =
+        appSettings.autoModel || appSettings.geminiModel.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -424,7 +427,17 @@ class _ModelButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final model = ref.watch(settingsProvider).geminiModel;
+    final settings = ref.watch(settingsProvider);
+    final usage = ref.watch(modelUsageProvider);
+
+    // في الوضع التلقائي بنعرض آخر موديل رد فعلاً بدل كلمة "تلقائي" لوحدها،
+    // عشان تعرف بإيه بتلخص من غير ما تفتح الإعدادات.
+    // In auto mode we show the model that last answered rather than just
+    // "Automatic", so you can see what you are summarizing with at a glance.
+    final lastUsed = usage.counts.isEmpty ? null : usage.counts.keys.last;
+    final label = settings.autoModel
+        ? (lastUsed ?? context.l.autoLabel)
+        : settings.geminiModel;
 
     return OutlinedButton.icon(
       onPressed: onTap,
@@ -439,7 +452,7 @@ class _ModelButton extends ConsumerWidget {
         size: 18,
       ),
       label: Text(
-        needsModel ? context.l.chooseModel : model,
+        needsModel ? context.l.chooseModel : label,
         overflow: TextOverflow.ellipsis,
         textDirection: needsModel ? null : TextDirection.ltr,
       ),
