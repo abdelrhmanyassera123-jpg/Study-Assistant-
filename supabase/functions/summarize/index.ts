@@ -139,10 +139,21 @@ async function streamSummary(
   model: string,
   system: string,
   prompt: string,
+  file?: { mime_type?: string; data?: string },
 ): Promise<Response> {
+  // الملف بيتحط قبل النص: جوجل بتوصي بترتيب الملف أولاً عشان التعليمات
+  // اللي بعده تتفسّر في سياقه.
+  // The file goes before the text: Google recommends leading with the file so
+  // the instructions that follow are read in its context.
+  const parts: Array<Record<string, unknown>> = [];
+  if (file?.data && file.mime_type) {
+    parts.push({ inline_data: { mime_type: file.mime_type, data: file.data } });
+  }
+  parts.push({ text: prompt });
+
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts }],
     // حرارة منخفضة: عايزين اتباع أمين للأسلوب، مش إبداع.
     // Low temperature: faithful style-following, not invention.
     generationConfig: { temperature: 0.4 },
@@ -278,7 +289,13 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  let body: { action?: string; model?: string; system?: string; prompt?: string };
+  let body: {
+    action?: string;
+    model?: string;
+    system?: string;
+    prompt?: string;
+    file?: { mime_type?: string; data?: string };
+  };
   try {
     body = await req.json();
   } catch {
@@ -293,7 +310,13 @@ Deno.serve(async (req: Request) => {
     if (body.action === "summarize") {
       if (!body.model) return json({ error: "model is required" }, 400);
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
-      return await streamSummary(apiKey, body.model, body.system ?? "", body.prompt);
+      return await streamSummary(
+        apiKey,
+        body.model,
+        body.system ?? "",
+        body.prompt,
+        body.file,
+      );
     }
 
     return json({ error: `unknown action: ${body.action}` }, 400);

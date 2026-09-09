@@ -28,6 +28,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   final _outputScroll = ScrollController();
 
   ExtractedDocument? _extracted;
+  LectureFile? _file;
   String? _subjectId;
   String _output = '';
   bool _running = false;
@@ -51,6 +52,23 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       final file = await pickLocalFile(extensions: supportedDocumentExtensions);
       if (file == null || !mounted) return;
 
+      // الـ PDF بيتبعت للموديل زي ما هو — مش بنحاول نفك نصه في المتصفح.
+      // PDFs go to the model untouched; we don't try to unpack them here.
+      if (isModelReadable(file.name)) {
+        setState(() {
+          _file = LectureFile(
+            name: file.name,
+            mimeType: file.mimeType,
+            bytes: file.bytes,
+          );
+          _extracted = null;
+          _lecture.clear();
+          _output = '';
+          _error = null;
+        });
+        return;
+      }
+
       final doc = extractDocumentText(file.name, file.bytes);
       if (doc.isEmpty) {
         showSnack(context, context.l.fileHasNoText);
@@ -58,6 +76,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       }
       setState(() {
         _extracted = doc;
+        _file = null;
         _lecture.text = doc.text;
         _output = '';
         _error = null;
@@ -77,7 +96,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
   Future<void> _generate() async {
     final text = _lecture.text.trim();
-    if (text.isEmpty) {
+    if (text.isEmpty && _file == null) {
       showSnack(context, context.l.needLectureText);
       return;
     }
@@ -93,7 +112,11 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     });
 
     try {
-      final stream = summarizer.summarize(lectureText: text, samples: samples);
+      final stream = summarizer.summarize(
+        lectureText: text,
+        file: _file,
+        samples: samples,
+      );
       _sub = stream.listen(
         (chunk) {
           if (!mounted) return;
@@ -126,7 +149,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
   Future<void> _saveAsNote() async {
     final l = context.l;
-    final title = _extracted?.fileName.replaceAll(RegExp(r'\.[^.]+$'), '') ??
+    final title = (_extracted?.fileName ?? _file?.name)
+            ?.replaceAll(RegExp(r'\.[^.]+$'), '') ??
         _output.split('\n').first.replaceAll(RegExp(r'[#*]'), '').trim();
 
     try {
@@ -157,10 +181,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     // المستخدم يضغط ويستنى ويلاقي رسالة خطأ.
     // No model means no summary. Disable the button and say why, rather than
     // letting the user press it and wait for an error.
-    final settings = ref.watch(settingsProvider);
-    final modelChosen = settings.summarizer == SummarizerProvider.gemini
-        ? settings.geminiModel.isNotEmpty
-        : settings.ollamaModel.isNotEmpty;
+    final modelChosen = ref.watch(settingsProvider).geminiModel.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -188,13 +209,11 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // المزود المفعّل لازم يبان في الصفحة نفسها. لما كان مخبي جوه
-                // الإعدادات، كان ممكن تظبط Gemini بالكامل والتطبيق لسه على
-                // الموديل المحلي من غير أي إشارة.
-                // The active provider has to be visible on the page itself.
-                // Hidden inside settings, you could finish wiring Gemini while
-                // the app quietly kept using the local model.
-                _ProviderButton(
+                // الموديل المستخدم لازم يبان في الصفحة نفسها، مش مخبي جوه
+                // الإعدادات — عشان تعرف بإيه بتلخص من غير ما تفتح حاجة.
+                // The model in use belongs on the page, not hidden in settings,
+                // so you can see what you are summarizing with at a glance.
+                _ModelButton(
                   needsModel: !modelChosen,
                   onTap: () => showModalBottomSheet<void>(
                     context: context,
@@ -234,7 +253,14 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
               maxLines: 8,
               minLines: 5,
               onChanged: (_) {
-                if (_extracted != null) setState(() => _extracted = null);
+                // الكتابة اليدوية بتلغي أي ملف مرفق — مصدر واحد للمحاضرة.
+                // Typing replaces any attachment; one source for the lecture.
+                if (_extracted != null || _file != null) {
+                  setState(() {
+                    _extracted = null;
+                    _file = null;
+                  });
+                }
               },
               decoration: InputDecoration(
                 hintText: l.lectureText,
@@ -244,6 +270,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
             if (_extracted != null) ...[
               const SizedBox(height: 10),
               _ExtractionInfo(doc: _extracted!),
+            ],
+            if (_file != null) ...[
+              const SizedBox(height: 10),
+              _AttachedFile(
+                file: _file!,
+                onRemove: () => setState(() => _file = null),
+              ),
             ],
 
             const SizedBox(height: 18),
@@ -326,20 +359,18 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   }
 }
 
-/// بيعرض المزود المفعّل وبيفتح إعداداته بضغطة.
-/// Shows the active provider and opens its settings in one tap.
-class _ProviderButton extends ConsumerWidget {
-  const _ProviderButton({required this.onTap, this.needsModel = false});
+/// بيعرض الموديل المستخدم وبيفتح إعداداته بضغطة.
+/// Shows the model in use and opens its settings in one tap.
+class _ModelButton extends ConsumerWidget {
+  const _ModelButton({required this.onTap, this.needsModel = false});
 
   final VoidCallback onTap;
   final bool needsModel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l = context.l;
     final scheme = Theme.of(context).colorScheme;
-    final isGemini =
-        ref.watch(settingsProvider).summarizer == SummarizerProvider.gemini;
+    final model = ref.watch(settingsProvider).geminiModel;
 
     return OutlinedButton.icon(
       onPressed: onTap,
@@ -350,12 +381,14 @@ class _ProviderButton extends ConsumerWidget {
             )
           : null,
       icon: Icon(
-        needsModel
-            ? Icons.warning_amber_rounded
-            : (isGemini ? Icons.cloud_outlined : Icons.computer_rounded),
+        needsModel ? Icons.warning_amber_rounded : Icons.auto_awesome_rounded,
         size: 18,
       ),
-      label: Text(isGemini ? l.providerGemini : l.providerOllama),
+      label: Text(
+        needsModel ? context.l.chooseModel : model,
+        overflow: TextOverflow.ellipsis,
+        textDirection: needsModel ? null : TextDirection.ltr,
+      ),
     );
   }
 }
@@ -404,6 +437,61 @@ class _StyleBanner extends StatelessWidget {
             ),
           ),
           TextButton(onPressed: onManage, child: Text(l.styleSamples)),
+        ],
+      ),
+    );
+  }
+}
+
+/// بطاقة الملف المرفق — بديل خانة النص لما الموديل هو اللي هيقرا الملف.
+/// The attachment card, replacing the text box when the model reads the file.
+class _AttachedFile extends StatelessWidget {
+  const _AttachedFile({required this.file, required this.onRemove});
+
+  final LectureFile file;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.picture_as_pdf_rounded, size: 20, color: scheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${file.megabytes.toStringAsFixed(1)} MB · ${l.modelReadsFile}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: l.removeFile,
+            onPressed: onRemove,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
         ],
       ),
     );

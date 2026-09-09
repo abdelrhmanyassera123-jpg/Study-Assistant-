@@ -47,7 +47,8 @@ class GeminiSummarizer implements Summarizer {
 
   @override
   Stream<String> summarize({
-    required String lectureText,
+    String lectureText = '',
+    LectureFile? file,
     required List<StyleSample> samples,
   }) async* {
     if (config.model.isEmpty) {
@@ -60,7 +61,19 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
 
-    final prompt = StudyPrompt.build(lectureText: lectureText, samples: samples);
+    if (file != null && file.isTooBig) {
+      throw SummarizerException(
+        'الملف كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
+        hint: 'الحد الأقصى ${LectureFile.maxBytes ~/ (1024 * 1024)} ميجا — '
+            'قسّم الملف أو صدّره بجودة أقل.',
+      );
+    }
+
+    final prompt = StudyPrompt.build(
+      lectureText: lectureText,
+      hasFile: file != null,
+      samples: samples,
+    );
 
     final approx = StudyPrompt.approxTokens(prompt);
     if (approx > GeminiConfig.inputTokenBudget) {
@@ -77,6 +90,11 @@ class GeminiSummarizer implements Summarizer {
         'model': config.model,
         'system': StudyPrompt.system,
         'prompt': prompt,
+        if (file != null)
+          'file': {
+            'mime_type': file.mimeType,
+            'data': base64Encode(file.bytes),
+          },
       });
 
     final http.StreamedResponse response;

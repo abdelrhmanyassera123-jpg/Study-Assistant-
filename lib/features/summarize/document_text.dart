@@ -56,7 +56,23 @@ ExtractedDocument extractDocumentText(String fileName, Uint8List bytes) {
   };
 }
 
-const supportedDocumentExtensions = ['pptx', 'docx', 'txt', 'md'];
+/// الامتدادات اللي بنفك نصها في المتصفح.
+/// Extensions whose text we unpack in the browser.
+const extractableExtensions = ['pptx', 'docx', 'txt', 'md'];
+
+/// الامتدادات اللي بنبعتها للموديل زي ما هي — الموديل بيقراها بنفسه.
+/// Extensions handed to the model untouched; it reads them itself.
+const modelReadableExtensions = ['pdf'];
+
+const supportedDocumentExtensions = [
+  ...extractableExtensions,
+  ...modelReadableExtensions,
+];
+
+/// هل الملف ده بيتبعت كملف بدل ما نستخرج نصه؟
+/// Is this file sent as a file rather than text-extracted?
+bool isModelReadable(String fileName) =>
+    modelReadableExtensions.contains(fileName.split('.').last.toLowerCase());
 
 ExtractedDocument _extractPlain(String fileName, Uint8List bytes) {
   final text = utf8.decode(bytes, allowMalformed: true).trim();

@@ -7,10 +7,18 @@ import 'package:web/web.dart' as web;
 /// ملف اختاره المستخدم من جهازه.
 /// A file the user picked from their machine.
 class PickedFile {
-  const PickedFile({required this.name, required this.bytes});
+  const PickedFile({
+    required this.name,
+    required this.bytes,
+    required this.mimeType,
+  });
 
   final String name;
   final Uint8List bytes;
+
+  /// نوع الملف زي ما المتصفح شافه — بيتبعت للموديل مع الملف.
+  /// The browser's own view of the type; sent to the model with the file.
+  final String mimeType;
 }
 
 /// بيفتح ديالوج اختيار ملف ويرجّع محتواه، أو null لو المستخدم لغى.
@@ -25,6 +33,14 @@ class PickedFile {
 /// from the DOM immediately after `click()` and registers a window `focus`
 /// listener that cancels the pick — either is enough to stop Chrome opening the
 /// dialog at all. Here the input stays in the document until the user is done.
+String _mimeFromName(String name) => switch (name.split('.').last.toLowerCase()) {
+      'pdf' => 'application/pdf',
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      _ => 'application/octet-stream',
+    };
+
 Future<PickedFile?> pickLocalFile({required List<String> extensions}) {
   final completer = Completer<PickedFile?>();
 
@@ -63,6 +79,11 @@ Future<PickedFile?> pickLocalFile({required List<String> extensions}) {
           finish(PickedFile(
             name: file.name,
             bytes: buffer.toDart.asUint8List(),
+            // بعض المتصفحات بتسيب النوع فاضي — بنستنتجه من الامتداد وقتها.
+            // Some browsers leave the type blank; fall back to the extension.
+            mimeType: file.type.isNotEmpty
+                ? file.type
+                : _mimeFromName(file.name),
           ));
         }.toJS,
       );

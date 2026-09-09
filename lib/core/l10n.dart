@@ -222,7 +222,7 @@ class AppL10n {
       );
 
   String get pickLectureFile => _('اختار ملف المحاضرة', 'Choose lecture file');
-  String get supportedFiles => _('pptx · docx · txt · md', 'pptx · docx · txt · md');
+  String get supportedFiles => _('pdf · pptx · docx · txt · md', 'pdf · pptx · docx · txt · md');
   String get orPasteText => _('أو الزق النص', 'or paste the text');
   String get lectureText => _('نص المحاضرة', 'Lecture text');
   String get unsupportedFileType =>
@@ -248,25 +248,10 @@ class AppL10n {
 
   // --------------------------------------------------------- model settings
   String get modelSettings => _('إعدادات الموديل', 'Model settings');
-  String get serverAddress => _('عنوان الخادم', 'Server address');
   String get chooseModel => _('الموديل', 'Model');
-  String get contextSize => _('حجم السياق (توكن)', 'Context size (tokens)');
   String get testConnection => _('اختبار الاتصال', 'Test connection');
   String get connectedModels => _('متصل — الموديلات المتاحة', 'Connected — models found');
-  String get corsHint => _(
-        'لو الاتصال فشل من المتصفح، شغّل Ollama بمتغير البيئة '
-            'OLLAMA_ORIGINS=* عشان يسمح بالطلبات من الصفحة.',
-        'If the browser cannot connect, start Ollama with OLLAMA_ORIGINS=* so '
-            'it accepts requests from this page.',
-      );
 
-  String get whoSummarizes => _('مين بيلخص', 'Summarized by');
-  String get providerOllama => _('موديل محلي', 'Local model');
-  String get providerGemini => _('Gemini', 'Gemini');
-  String get providerOllamaHint => _(
-        'مجاني وخاص تمامًا — بس بيشتغل وجهازك فاتح بس.',
-        'Free and fully private, but only while this machine is on.',
-      );
   String get providerGeminiHint => _(
         'بيشتغل من أي جهاز. المفتاح محفوظ على السيرفر مش في المتصفح.',
         'Works from any device. The key stays on the server, not in the browser.',
@@ -284,6 +269,12 @@ class AppL10n {
         'You must be signed in to use Gemini.',
       );
   String get chooseModelFirst => _('اختار موديل الأول', 'Choose a model first');
+  String get attachedFile => _('ملف مرفق', 'Attached file');
+  String get modelReadsFile => _(
+        'الموديل هيقرا الملف بنفسه — بيشتغل مع الـ PDF المكتوب والمسكون.',
+        'The model reads the file itself — works for text and scanned PDFs.',
+      );
+  String get removeFile => _('شيل الملف', 'Remove file');
 }
 
 class AppL10nDelegate extends LocalizationsDelegate<AppL10n> {

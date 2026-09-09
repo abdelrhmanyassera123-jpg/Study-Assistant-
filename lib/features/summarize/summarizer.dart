@@ -1,4 +1,34 @@
+import 'dart:typed_data';
+
 import '../../models/models.dart';
+
+/// ملف محاضرة بيتبعت للموديل زي ما هو بدل ما نستخرج نصه محليًا.
+/// A lecture file sent to the model as-is instead of extracting text locally.
+///
+/// الـ PDF مش زي pptx/docx: مش أرشيف XML نقدر نفكه في المتصفح، وكتير منها
+/// مسكون (صور). Gemini بيقرا الـ PDF بنفسه — نص ومسكون — فبنبعتهوله كامل.
+/// PDFs are unlike pptx/docx: not an XML archive we can unzip in the browser,
+/// and many are scanned images. Gemini reads PDFs directly — text or scanned —
+/// so we hand the whole file over.
+class LectureFile {
+  const LectureFile({
+    required this.name,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  final String name;
+  final String mimeType;
+  final Uint8List bytes;
+
+  /// الحد الأقصى للملف. الترميز base64 بيكبّر الحجم ~33%، وحد الطلب عند
+  /// جوجل حوالي 20 ميجا.
+  /// Size ceiling: base64 inflates by ~33% and Google's request cap is ~20 MB.
+  static const maxBytes = 12 * 1024 * 1024;
+
+  bool get isTooBig => bytes.length > maxBytes;
+  double get megabytes => bytes.length / (1024 * 1024);
+}
 
 /// خطأ بلغة المستخدم — الواجهة بتعرضه زي ما هو.
 /// A user-facing failure; the UI shows [message] as-is.
@@ -15,25 +45,18 @@ class SummarizerException implements Exception {
   String toString() => hint == null ? message : '$message\n$hint';
 }
 
-/// مين بيلخص: موديل محلي على جهازك، ولا Gemini من ورا Edge Function.
-/// Who does the summarizing: a local model, or Gemini behind an Edge Function.
-enum SummarizerProvider {
-  /// مجاني وخاص تمامًا، بس محتاج جهازك يكون شغال.
-  /// Free and fully private, but only while your machine is on.
-  ollama,
-
-  /// بيشتغل من أي جهاز. المفتاح بيقعد على السيرفر مش في المتصفح.
-  /// Works from anywhere. The key lives on the server, never in the browser.
-  gemini,
-}
-
 /// الواجهة اللي كل مزود بينفذها — الصفحة مش بتعرف مين اللي بيرد.
 /// The contract every provider implements; the page doesn't know which one answers.
 abstract class Summarizer {
   /// بيرجّع التلخيص قطعة قطعة وهو بيتولد.
   /// Yields the summary in chunks as it is produced.
+  /// [lectureText] للنص الملزوق أو المستخرج، و[file] للملفات اللي الموديل
+  /// بيقراها بنفسه (PDF). واحد منهم لازم يكون موجود.
+  /// [lectureText] carries pasted or extracted text; [file] carries files the
+  /// model reads itself (PDF). At least one must be present.
   Stream<String> summarize({
-    required String lectureText,
+    String lectureText = '',
+    LectureFile? file,
     required List<StyleSample> samples,
   });
 
@@ -67,15 +90,20 @@ class StudyPrompt {
 ''';
 
   static String build({
-    required String lectureText,
+    String lectureText = '',
+    bool hasFile = false,
     required List<StyleSample> samples,
   }) {
     final buffer = StringBuffer();
+    // لما المحاضرة ملف مرفق، الموديل بيقراه بنفسه فبنشاور عليه بدل ما نلزق نص.
+    // With an attached file the model reads it directly, so we point at it
+    // instead of pasting text.
+    final lectureBody = hasFile ? '(المحاضرة في الملف المرفق)' : lectureText.trim();
 
     if (samples.isEmpty) {
       buffer.writeln('### المحاضرة:');
       buffer.writeln();
-      buffer.writeln(lectureText.trim());
+      buffer.writeln(lectureBody);
       buffer.writeln();
       buffer.writeln('لخّص المحاضرة دي تلخيص مذاكرة منظم بالعربي.');
       return buffer.toString();
@@ -94,7 +122,7 @@ class StudyPrompt {
 
     buffer.writeln('### المحاضرة الجديدة:');
     buffer.writeln();
-    buffer.writeln(lectureText.trim());
+    buffer.writeln(lectureBody);
     buffer.writeln();
     buffer.writeln('لخّص المحاضرة الجديدة دي بنفس أسلوبي وشكلي بالظبط.');
 
