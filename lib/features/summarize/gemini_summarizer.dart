@@ -222,10 +222,10 @@ class GeminiSummarizer implements Summarizer {
     // The cap applies to the whole request, not one image, and base64 inflates
     // by about a third, so the total is checked before sending.
     final totalMb = images.fold<double>(0, (sum, i) => sum + i.megabytes);
-    if (totalMb * 1.34 > 18) {
+    if (totalMb * 1.34 > 8) {
       throw SummarizerException(
         'الصور مع بعض كبيرة جدًا (${totalMb.toStringAsFixed(1)} ميجا).',
-        hint: 'ارفع صور أقل، أو صغّر حجمها.',
+        hint: 'ارفع صور أقل في المرة الواحدة.',
       );
     }
 
@@ -341,6 +341,10 @@ class GeminiSummarizer implements Summarizer {
         // 503 is very common on the free tier; the function already retried
         // three times, so reaching here means the model is genuinely busy.
         503 => 'الموديل مزحوم عند جوجل دلوقتي.',
+        // 546 من Supabase مش من جوجل: الفنكشن خلصت ذاكرتها وهي بتناول الملف.
+        // 546 comes from Supabase, not Google: the function ran out of memory
+        // while relaying the file.
+        546 => 'الملفات كبيرة على خدمة التلخيص.',
         _ => 'خدمة التلخيص رجّعت خطأ $status.',
       };
 
@@ -350,6 +354,7 @@ class GeminiSummarizer implements Summarizer {
             'الموديلات الأحدث حصتها المجانية أضيق (gemini-2.5-flash أوسع).',
         503 => 'استنى دقيقة وجرّب تاني، أو غيّر الموديل من الإعدادات '
             '(gemini-2.5-flash عادة أقل ازدحامًا).',
+        546 => 'ارفع صور أقل في المرة الواحدة، أو ملف PDF أصغر.',
         _ => null,
       };
 }

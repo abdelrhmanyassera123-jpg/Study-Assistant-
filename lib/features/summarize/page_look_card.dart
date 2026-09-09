@@ -6,6 +6,7 @@ import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import 'file_input.dart';
+import 'image_shrink.dart';
 import 'style_profile.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
@@ -54,15 +55,25 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
         return;
       }
 
+      // بنصغّرها في المتصفح الأول: صور الموبايل بتكسّر حدود ذاكرة الـ Edge
+      // Function لما تتبعت بحجمها الأصلي.
+      // Shrunk in the browser first: at their original size, phone photos blow
+      // the Edge Function's memory limit.
+      final files = <LectureFile>[];
+      for (final f in picked.take(_maxImages)) {
+        final small = await shrinkImage(f);
+        files.add(LectureFile(
+          name: small.name,
+          mimeType: small.mimeType,
+          bytes: small.bytes,
+        ));
+      }
+
       // الصور كلها في نداء واحد: أرخص على الحصة، والأهم إن الموديل بيشوفهم
       // مع بعض فيستنتج العادة المشتركة بدل ما يوصف كل صفحة لوحدها.
       // All images ride one call: cheaper on quota, and the model sees them
       // together so it infers the shared habit instead of describing each page
       // in isolation.
-      final files = [
-        for (final f in picked.take(_maxImages))
-          LectureFile(name: f.name, mimeType: f.mimeType, bytes: f.bytes),
-      ];
 
       final analysis =
           await ref.read(activeSummarizerProvider).analyzeStyle(files);

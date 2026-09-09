@@ -22,10 +22,16 @@ class LectureFile {
   final String mimeType;
   final Uint8List bytes;
 
-  /// الحد الأقصى للملف. الترميز base64 بيكبّر الحجم ~33%، وحد الطلب عند
-  /// جوجل حوالي 20 ميجا.
-  /// Size ceiling: base64 inflates by ~33% and Google's request cap is ~20 MB.
-  static const maxBytes = 12 * 1024 * 1024;
+  /// الحد الأقصى للملف الواحد.
+  /// Per-file size ceiling.
+  ///
+  /// الحد الفعلي مش حد جوجل (20 ميجا) بل ذاكرة الـ Edge Function: الملف بيتفك
+  /// من JSON ويتعاد بناؤه، فبيتخزن مرتين تلاتة في الذاكرة. تجاوز ده بيدي
+  /// WORKER_RESOURCE_LIMIT بدل رسالة مفهومة.
+  /// The real ceiling is not Google's 20 MB but the Edge Function's memory: the
+  /// file is parsed out of JSON then rebuilt, so it sits in memory two or three
+  /// times over. Going past it yields WORKER_RESOURCE_LIMIT, not a clear error.
+  static const maxBytes = 6 * 1024 * 1024;
 
   bool get isTooBig => bytes.length > maxBytes;
   double get megabytes => bytes.length / (1024 * 1024);
