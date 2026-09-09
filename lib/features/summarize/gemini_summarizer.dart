@@ -34,11 +34,31 @@ class GeminiConfig {
 /// بيلخص عن طريق Gemini، والنداء بيعدي من Supabase Edge Function.
 /// Summarizes via Gemini, with the call routed through a Supabase Edge Function.
 class GeminiSummarizer implements Summarizer {
-  GeminiSummarizer(this.config, {http.Client? client})
-      : _client = client ?? http.Client();
+  GeminiSummarizer(
+    this.config, {
+    http.Client? client,
+    this.onRequest,
+    this.onQuotaLimit,
+  }) : _client = client ?? http.Client();
 
   final GeminiConfig config;
   final http.Client _client;
+
+  /// بيتنادى قبل كل طلب توليد — العدّاد الوحيد الصادق للحصة.
+  /// Called before each generation request; the only honest quota counter.
+  final void Function(String model)? onRequest;
+
+  /// بيتنادى لما جوجل تقول الحد المجاني في رسالة تجاوز الحصة.
+  /// Called when Google names the free limit in a quota message.
+  final void Function(String model, int limit)? onQuotaLimit;
+
+  /// بيستخرج الحد من رسالة 429 — الطريقة الوحيدة لمعرفته، مفيش API بيعرضه.
+  /// Pulls the limit out of a 429 body; there is no API that exposes it.
+  void _learnLimit(String body) {
+    final match = RegExp(r'limit:\s*(\d+)').firstMatch(body);
+    final limit = int.tryParse(match?.group(1) ?? '');
+    if (limit != null) onQuotaLimit?.call(config.model, limit);
+  }
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -98,6 +118,8 @@ class GeminiSummarizer implements Summarizer {
           },
       });
 
+    onRequest?.call(config.model);
+
     final http.StreamedResponse response;
     try {
       response = await _client.send(request);
@@ -110,6 +132,7 @@ class GeminiSummarizer implements Summarizer {
 
     if (response.statusCode != 200) {
       final body = await response.stream.bytesToString();
+      if (response.statusCode == 429) _learnLimit(body);
       throw SummarizerException(
         _statusMessage(response.statusCode),
         hint: _statusHint(response.statusCode) ?? (body.isEmpty ? null : body),
@@ -264,6 +287,8 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
 
+    if (payload['action'] == 'json') onRequest?.call(config.model);
+
     final http.Response response;
     try {
       response = await _client
@@ -280,10 +305,11 @@ class GeminiSummarizer implements Summarizer {
     }
 
     if (response.statusCode != 200) {
+      final body = utf8.decode(response.bodyBytes);
+      if (response.statusCode == 429) _learnLimit(body);
       throw SummarizerException(
         _statusMessage(response.statusCode),
-        hint: _statusHint(response.statusCode) ??
-            utf8.decode(response.bodyBytes),
+        hint: _statusHint(response.statusCode) ?? body,
       );
     }
 

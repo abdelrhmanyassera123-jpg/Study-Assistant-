@@ -17,6 +17,7 @@ class AppSettings {
     this.roundsBeforeLongBreak = 4,
     this.autoStartNext = false,
     this.geminiModel = '',
+    this.uiScale = 1.0,
   });
 
   final String languageCode;
@@ -31,6 +32,12 @@ class AppSettings {
   /// The Gemini model used for summarizing.
   final String geminiModel;
 
+  /// حجم النص في التطبيق كله. موجود لأن Flutter على الويب بيبتلع
+  /// Ctrl+عجلة الماوس قبل ما توصل للمتصفح، فزوم المتصفح مش شغال جوه التطبيق.
+  /// App-wide text size. It exists because Flutter web swallows Ctrl+wheel
+  /// before the browser sees it, so browser zoom does nothing inside the app.
+  final double uiScale;
+
   Locale get locale => Locale(languageCode);
 
   AppSettings copyWith({
@@ -42,6 +49,7 @@ class AppSettings {
     int? roundsBeforeLongBreak,
     bool? autoStartNext,
     String? geminiModel,
+    double? uiScale,
   }) {
     return AppSettings(
       languageCode: languageCode ?? this.languageCode,
@@ -52,6 +60,7 @@ class AppSettings {
       roundsBeforeLongBreak: roundsBeforeLongBreak ?? this.roundsBeforeLongBreak,
       autoStartNext: autoStartNext ?? this.autoStartNext,
       geminiModel: geminiModel ?? this.geminiModel,
+      uiScale: uiScale ?? this.uiScale,
     );
   }
 }
@@ -73,6 +82,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _kRounds = 'rounds';
   static const _kAuto = 'auto_start';
   static const _kGeminiModel = 'gemini_model';
+  static const _kUiScale = 'ui_scale';
 
   SharedPreferences? _prefs;
 
@@ -91,7 +101,13 @@ class SettingsNotifier extends Notifier<AppSettings> {
       roundsBeforeLongBreak: p.getInt(_kRounds) ?? 4,
       autoStartNext: p.getBool(_kAuto) ?? false,
       geminiModel: p.getString(_kGeminiModel) ?? '',
+      uiScale: p.getDouble(_kUiScale) ?? 1.0,
     );
+  }
+
+  void setUiScale(double scale) {
+    state = state.copyWith(uiScale: scale);
+    _prefs?.setDouble(_kUiScale, scale);
   }
 
   void setGeminiModel(String model) {

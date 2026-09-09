@@ -13,13 +13,20 @@ class PageBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          child: child,
+    // التمرير هنا مش في كل صفحة على حدة: من غيره أي محتوى أطول من الشاشة
+    // بيتقص وما فيش طريقة توصله.
+    // Scrolling lives here rather than in each page: without it any content
+    // taller than the screen is simply cut off with no way to reach it.
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            child: child,
+          ),
         ),
       ),
     );

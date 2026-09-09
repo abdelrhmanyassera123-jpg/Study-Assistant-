@@ -43,12 +43,37 @@ class StyleProfile {
   Color colorAt(int index, Color fallback) =>
       accentColors.isEmpty ? fallback : accentColors[index % accentColors.length];
 
+  /// بيقرا لون ويرفض اللي مش صالح كلون تمييز على ورقة.
+  /// Parses a colour, rejecting anything unusable as an accent on paper.
+  ///
+  /// الموديل بيرجّع لون الورق (أبيض/كريمي) ولون الحبر (أسود) ضمن الألوان،
+  /// وهما مش ألوان تمييز — لو اتاخدوا زي ما هما بيطلع عنوان أبيض على ورقة
+  /// بيضا أو أسود على أسود. واللي فاتح زيادة بنغمّقه بدل ما نرميه.
+  /// The model lists the paper colour (white/cream) and the ink colour (black)
+  /// among the accents. Taken literally they produce a white heading on white
+  /// paper, or black on black. Anything merely too pale is darkened instead of
+  /// being thrown away.
   static Color? _parseColor(Object? v) {
     if (v is! String) return null;
     final hex = v.replaceAll('#', '').trim();
     if (hex.length != 6) return null;
     final value = int.tryParse(hex, radix: 16);
-    return value == null ? null : Color(0xFF000000 | value);
+    if (value == null) return null;
+
+    final color = Color(0xFF000000 | value);
+    final luminance = color.computeLuminance();
+
+    // ورق أو حبر، مش لون تمييز.
+    // Paper or ink, not an accent.
+    if (luminance > 0.82 || luminance < 0.04) return null;
+
+    // فاتح لدرجة إنه ما يبانش على ورقة بيضا — بنغمّقه لحد ما يُقرأ.
+    // Too pale to read on white paper: darken until it does.
+    var adjusted = color;
+    while (adjusted.computeLuminance() > 0.55) {
+      adjusted = Color.lerp(adjusted, const Color(0xFF1A1A1A), 0.25)!;
+    }
+    return adjusted;
   }
 
   factory StyleProfile.fromJson(Map<String, dynamic> m) => StyleProfile(

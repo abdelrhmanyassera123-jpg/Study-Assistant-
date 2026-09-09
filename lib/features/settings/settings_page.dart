@@ -66,6 +66,48 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ),
             ),
+            SectionHeader(l.textSize),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.text_fields_rounded, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${(settings.uiScale * 100).round()}%',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: settings.uiScale.clamp(0.7, 1.5),
+                      min: 0.7,
+                      max: 1.5,
+                      divisions: 16,
+                      label: '${(settings.uiScale * 100).round()}%',
+                      onChanged: (v) =>
+                          notifier.setUiScale((v * 20).round() / 20),
+                    ),
+                    Text(
+                      l.textSizeHint,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             SectionHeader(l.timer),
             Card(
               child: ListTile(

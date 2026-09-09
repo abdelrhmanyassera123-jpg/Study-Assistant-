@@ -37,9 +37,7 @@ class DashboardPage extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async => invalidateAll(ref),
-      child: ListView(
-        children: [
-          PageBody(
+      child: PageBody(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -206,10 +204,8 @@ class DashboardPage extends ConsumerWidget {
                     ),
                   ),
                 ],
-              ],
-            ),
-          ),
-        ],
+            ],
+        ),
       ),
     );
   }

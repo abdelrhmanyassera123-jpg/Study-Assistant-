@@ -21,9 +21,18 @@ class SummaryPageView extends StatelessWidget {
   final SummaryPage page;
   final StyleProfile profile;
 
-  /// النسخة المصدّرة بخلفية بيضا ثابتة عشان تطلع صالحة للطباعة.
-  /// The exported copy is always on white so it prints correctly.
+  /// النسخة المصدّرة بتتقاس بعرض ثابت؛ المعاينة بتاخد عرض الشاشة.
+  /// The exported copy uses a fixed width; the preview takes the screen's.
   final bool forExport;
+
+  /// الصفحة ورقة، مش جزء من ثيم التطبيق: بتفضل بيضا بحبر غامق حتى في الوضع
+  /// الليلي. غير كده الثيم الغامق كان بيدي أسود على أسود، وبيخلي المعاينة
+  /// مختلفة عن الملف المصدَّر.
+  /// The page is paper, not part of the app's theme: it stays white with dark
+  /// ink even in dark mode. Otherwise dark mode rendered black on black, and
+  /// the preview stopped matching the exported file.
+  static const _paper = Color(0xFFFFFDF7);
+  static const _ink = Color(0xFF1A1A1A);
 
   double get _gap => switch (profile.density) {
         'compact' => 10,
@@ -33,16 +42,14 @@ class SummaryPageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final onPaper = forExport ? const Color(0xFF1A1A1A) : scheme.onSurface;
-    final paper = forExport ? Colors.white : scheme.surfaceContainerLowest;
-    final headingColor = profile.colorAt(0, scheme.primary);
+    const onPaper = _ink;
+    final headingColor = profile.colorAt(0, const Color(0xFF1F3A93));
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Container(
         width: forExport ? 900 : null,
-        color: paper,
+        color: _paper,
         padding: EdgeInsets.all(forExport ? 40 : 22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -83,8 +90,7 @@ class _Block extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = profile.colorAt(block.colorIndex, scheme.primary);
+    final color = profile.colorAt(block.colorIndex, const Color(0xFF1F3A93));
     final body = TextStyle(fontSize: 15, height: 1.9, color: onPaper);
 
     return switch (block.type) {

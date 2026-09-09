@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
+import 'model_usage.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
 
@@ -65,6 +66,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
   Widget build(BuildContext context) {
     final l = context.l;
     final settings = ref.watch(settingsProvider);
+    final usage = ref.watch(modelUsageProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
@@ -133,14 +135,42 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                     ? settings.geminiModel
                     : null,
                 isExpanded: true,
+                itemHeight: 58,
                 decoration: InputDecoration(labelText: l.chooseModel),
+                // بنعرض استهلاكك تحت كل موديل: جوجل ما بتعرضش الحصة المتبقية
+                // في أي API، فالعدّاد المحلي هو الرقم الوحيد الحقيقي.
+                // Your own usage sits under each model: Google exposes no
+                // remaining-quota API, so this local count is the real number.
+                selectedItemBuilder: (context) => [
+                  for (final m in _models!)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(m,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr),
+                    ),
+                ],
                 items: [
                   for (final m in _models!)
                     DropdownMenuItem(
                       value: m,
-                      child: Text(m,
-                          overflow: TextOverflow.ellipsis,
-                          textDirection: TextDirection.ltr),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(m,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.ltr),
+                          Text(
+                            usage.describe(m, isAr: l.isAr),
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: usage.countFor(m) > 0
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
                 ],
                 onChanged: (v) {

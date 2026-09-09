@@ -194,6 +194,11 @@ class AppL10n {
   // -------------------------------------------------------------- settings
   String get language => _('اللغة', 'Language');
   String get theme => _('المظهر', 'Theme');
+  String get textSize => _('حجم النص', 'Text size');
+  String get textSizeHint => _(
+        'زوم المتصفح (Ctrl + عجلة) مش شغال جوه التطبيق، فاستخدم ده بدله.',
+        'Browser zoom (Ctrl + wheel) does not work inside the app; use this.',
+      );
   String get themeLight => _('فاتح', 'Light');
   String get themeDark => _('غامق', 'Dark');
   String get themeSystem => _('حسب النظام', 'System');

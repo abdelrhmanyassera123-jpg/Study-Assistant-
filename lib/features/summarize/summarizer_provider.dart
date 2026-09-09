@@ -4,6 +4,7 @@ import '../../core/settings.dart';
 import '../../core/supabase_config.dart';
 import '../../data/providers.dart';
 import 'gemini_summarizer.dart';
+import 'model_usage.dart';
 import 'summarizer.dart';
 
 /// الملخّص المستخدم في التطبيق.
@@ -26,7 +27,11 @@ final activeSummarizerProvider = Provider<Summarizer>((ref) {
     accessToken: ref.watch(accessTokenProvider) ?? '',
     anonKey: SupabaseConfig.anonKey,
     model: settings.geminiModel,
-  ));
+  ),
+    onRequest: (model) => ref.read(modelUsageProvider.notifier).record(model),
+    onQuotaLimit: (model, limit) =>
+        ref.read(modelUsageProvider.notifier).noteLimit(model, limit),
+  );
 });
 
 /// توكن الدخول الحالي — بيتغير مع تسجيل الدخول والخروج والتجديد.

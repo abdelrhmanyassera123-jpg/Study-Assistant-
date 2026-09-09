@@ -53,6 +53,15 @@ class StudyApp extends ConsumerWidget {
       themeMode: settings.themeMode,
       theme: AppTheme.light(isAr),
       darkTheme: AppTheme.dark(isAr),
+      // حجم النص بيتطبق هنا على التطبيق كله بدل زوم المتصفح اللي Flutter
+      // بيبتلعه على الويب.
+      // Text size is applied app-wide here, standing in for the browser zoom
+      // that Flutter web swallows.
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        minScaleFactor: settings.uiScale,
+        maxScaleFactor: settings.uiScale,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: SupabaseConfig.isConfigured ? const AuthGate() : const SetupPage(),
     );
   }
