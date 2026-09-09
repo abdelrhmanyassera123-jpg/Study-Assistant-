@@ -174,35 +174,82 @@ class SummaryPage {
       ['# $title', for (final b in blocks) b.toPlainText()].join('\n\n');
 }
 
+/// ناتج تحليل صورة من كراسة المستخدم: شكل الصفحة **ونص** التلخيص اللي فيها.
+/// What one notebook photo yields: the page's look **and** the summary written
+/// on it.
+///
+/// الاتنين بيتطلبوا في نداء واحد بقصد — الحصة المجانية محدودة، وكل صورة
+/// بتديك المعلومتين مرة واحدة.
+/// Both come from a single call on purpose: the free quota is tight, and one
+/// photo can answer both questions at once.
+@immutable
+class StyleAnalysis {
+  const StyleAnalysis({
+    required this.profile,
+    this.title = '',
+    this.transcript = '',
+  });
+
+  final StyleProfile profile;
+
+  /// عنوان الصفحة زي ما هو مكتوب.
+  /// The page's own heading.
+  final String title;
+
+  /// نص التلخيص المكتوب بخط اليد، منقول حرفيًا.
+  /// The handwritten summary, transcribed as written.
+  final String transcript;
+
+  bool get hasTranscript => transcript.trim().length > 30;
+
+  factory StyleAnalysis.fromJson(Map<String, dynamic> m) => StyleAnalysis(
+        profile: StyleProfile.fromJson(
+          (m['look'] as Map<String, dynamic>?) ?? m,
+        ),
+        title: (m['title'] as String?) ?? '',
+        transcript: (m['transcript'] as String?) ?? '',
+      );
+}
+
 /// البرومبتات الخاصة بالتحليل البصري والتلخيص المنظم.
 /// Prompts for the visual analysis and the structured summary.
 class VisualPrompts {
   const VisualPrompts._();
 
   static const analysisSystem = '''
-أنت بتحلل صور تلخيصات مكتوبة بخط اليد وبتوصف **شكلها البصري** بس.
-متقراش المحتوى الدراسي ومتلخصهوش — انت بتدرس التنسيق مش المادة العلمية.
+أنت بتحلل صور تلخيصات مكتوبة بخط اليد. مطلوب منك حاجتين من نفس الصورة:
 
-ركّز على:
+**أولاً: شكل الصفحة**
 - الألوان المستخدمة وأماكنها (عناوين، تحديد، تحذيرات).
 - ترتيب الأقسام على الصفحة من فوق لتحت.
 - استخدام المربعات والإطارات والخطوط الفاصلة.
 - التنقيط والترقيم.
 - كثافة الصفحة: مزحومة ولا فيها مسافات.
 
+**ثانيًا: نص التلخيص**
+انقل اللي مكتوب في الصفحة **حرفيًا** بنفس ترتيبه وتقسيمه وعناوينه.
+- متلخصش ومتختصرش ومتعيدش صياغة — ده نقل مش تلخيص.
+- حافظ على نبرة الطالب ولهجته زي ما كتبها بالظبط.
+- علّم العناوين بـ ** ** والنقط بـ -.
+- لو في كلمة مش واضحة، اكتب أقرب قراءة ليها من غير ما تعلّق.
+
 رد بـ JSON بالشكل ده بالظبط:
 {
-  "accent_colors": ["#RRGGBB", ...],
-  "section_order": ["اسم القسم زي ما بيسميه أو وصفه", ...],
-  "uses_boxes": true/false,
-  "uses_numbering": true/false,
-  "density": "compact" | "medium" | "airy",
-  "notes": "وصف مختصر لأي عادة تنسيق مميزة"
+  "look": {
+    "accent_colors": ["#RRGGBB", ...],
+    "section_order": ["اسم القسم زي ما بيسميه أو وصفه", ...],
+    "uses_boxes": true/false,
+    "uses_numbering": true/false,
+    "density": "compact" | "medium" | "airy",
+    "notes": "وصف مختصر لأي عادة تنسيق مميزة"
+  },
+  "title": "عنوان الصفحة زي ما هو مكتوب",
+  "transcript": "نص التلخيص كامل منقول حرفيًا"
 }
 ''';
 
   static const analysisPrompt =
-      'حلّل شكل الصفحات المرفقة ورد بالـ JSON المطلوب.';
+      'حلّل شكل الصفحة المرفقة وانقل نصها، ورد بالـ JSON المطلوب.';
 
   static String blocksSystem(StyleProfile profile) => '''
 أنت بتلخص محاضرات دراسية بأسلوب طالب معيّن وبشكل صفحته بالظبط.

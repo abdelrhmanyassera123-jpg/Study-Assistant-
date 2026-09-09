@@ -61,9 +61,9 @@ abstract class Summarizer {
     required List<StyleSample> samples,
   });
 
-  /// بيحلل صور تلخيصات المستخدم ويرجّع وصف شكل صفحته.
-  /// Reads photos of the user's summaries and returns their page layout.
-  Future<StyleProfile> analyzeStyle(List<LectureFile> images);
+  /// بيحلل صورة من كراسة المستخدم ويرجّع شكل صفحته ونص تلخيصها.
+  /// Reads a photo of the user's notebook: its layout and its written summary.
+  Future<StyleAnalysis> analyzeStyle(List<LectureFile> images);
 
   /// بيلخص ويرجّع بلوكات جاهزة للرسم بدل نص عادي.
   /// Summarizes into drawable blocks instead of prose.

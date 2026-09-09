@@ -181,7 +181,7 @@ class GeminiSummarizer implements Summarizer {
   }
 
   @override
-  Future<StyleProfile> analyzeStyle(List<LectureFile> images) async {
+  Future<StyleAnalysis> analyzeStyle(List<LectureFile> images) async {
     if (images.isEmpty) {
       throw const SummarizerException('محتاج صورة واحدة على الأقل.');
     }
@@ -209,7 +209,7 @@ class GeminiSummarizer implements Summarizer {
     if (parsed == null) {
       throw const SummarizerException('الموديل رجّع تحليل مش مفهوم.');
     }
-    return StyleProfile.fromJson(parsed);
+    return StyleAnalysis.fromJson(parsed);
   }
 
   @override
@@ -296,7 +296,7 @@ class GeminiSummarizer implements Summarizer {
   String _statusMessage(int status) => switch (status) {
         401 || 403 => 'الخدمة رفضت الطلب — سجّل خروج ودخول تاني.',
         404 => 'الموديل "${config.model}" مش متاح لمفتاحك.',
-        429 => 'خلصت حصتك من Gemini دلوقتي. جرّب بعد شوية.',
+        429 => 'خلصت حصتك المجانية من الموديل ده.',
         500 => 'المفتاح ناقص أو غلط في الخدمة.',
         // 503 شائع جدًا على الخطة المجانية — الفنكشن بتعيد المحاولة 3 مرات
         // قبل ما توصل هنا، فوصولها معناه إن الموديل مزحوم فعلاً.
@@ -308,6 +308,8 @@ class GeminiSummarizer implements Summarizer {
 
   String? _statusHint(int status) => switch (status) {
         404 => 'اختار موديل تاني من إعدادات التلخيص.',
+        429 => 'استنى دقيقة، أو اختار موديل أقدم من الإعدادات — '
+            'الموديلات الأحدث حصتها المجانية أضيق (gemini-2.5-flash أوسع).',
         503 => 'استنى دقيقة وجرّب تاني، أو غيّر الموديل من الإعدادات '
             '(gemini-2.5-flash عادة أقل ازدحامًا).',
         _ => null,

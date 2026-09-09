@@ -279,15 +279,19 @@ class AppL10n {
   // ------------------------------------------------------- page look
   String get pageLook => _('شكل صفحتك', 'Your page layout');
   String get pageLookIntro => _(
-        'ارفع صور من كراستك، والتطبيق يحلل شكل صفحتك — ألوانك، مربعاتك، '
-            'ترتيب أقسامك — ويطلّع التلخيص بنفس التخطيط جاهز للطباعة.',
-        'Upload photos of your notebook and the app reads your page layout — '
-            'your colours, boxes and section order — then lays the summary out '
-            'the same way, ready to print.',
+        'ارفع صورة من كراستك، والتطبيق يقرا شكل صفحتك (ألوانك، مربعاتك، ترتيب '
+            'أقسامك) وينقل نص تلخيصك كمان — فما تحتاجش تكتبه بإيدك.',
+        'Upload a photo of your notebook: the app reads your page layout — '
+            'colours, boxes, section order — and transcribes the summary too, '
+            'so nothing needs retyping.',
       );
   String get uploadHandwriting => _('ارفع صور تلخيصاتك', 'Upload page photos');
   String get analyzingLook => _('بيحلل شكل الصفحة...', 'Reading your layout...');
   String get lookSaved => _('شكل صفحتك اتسجل', 'Layout saved');
+  String get lookAndTextSaved => _(
+        'اتسجل شكل صفحتك ونص تلخيصك كمثال',
+        'Saved your layout, and the summary text as an example',
+      );
   String get noLookYet => _('لسه ما حللناش شكل صفحتك', 'No layout read yet');
   String get reanalyze => _('حلّل تاني', 'Read again');
   String get removeLook => _('امسح الشكل', 'Delete layout');

@@ -76,8 +76,60 @@ function rank(name: string): number {
   if (name.includes("flash")) score += 0; // الأنسب للتلخيص: سريع ورخيص
   else if (name.includes("pro")) score += 2;
   else score += 10;
-  if (name.endsWith("-latest")) score -= 1; // بيتابع أحدث نسخة مستقرة
+  // "-latest" بيشاور على أحدث موديل، وأحدث موديل حصته المجانية أضيق —
+  // المستخدم على المفتاح المجاني بيستفيد أكتر من نسخة مستقرة برقم ثابت.
+  // "-latest" tracks the newest model, and the newest model carries the
+  // tightest free-tier quota; a pinned stable version serves a free key better.
+  if (name.endsWith("-latest")) score += 1;
   return score;
+}
+
+/// نتيجة محاولات النداء على Gemini.
+/// The outcome of the Gemini call attempts.
+interface Attempt {
+  response: Response | null;
+  /// جسم آخر رد فاشل، متقروء **مرة واحدة** ومتخزن.
+  /// The last failed body, read **once** and kept.
+  errorBody: string;
+}
+
+/// بيعيد المحاولة على الازدحام المؤقت (503) بس.
+/// Retries transient overload (503) only.
+///
+/// الجسم بيتقرا مرة واحدة بس وبيتخزن: قراءة `Response` مرتين بترمي
+/// "Body already consumed" وبتخفي الخطأ الحقيقي ورا خطأ مضلل.
+/// The body is read exactly once and cached: reading a `Response` twice throws
+/// "Body already consumed", burying the real error behind a misleading one.
+async function withRetry(send: () => Promise<Response>): Promise<Attempt> {
+  let response: Response | null = null;
+  let errorBody = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1500));
+
+    response = await send();
+    if (response.ok) return { response, errorBody: "" };
+
+    errorBody = await response.text();
+    // 429 معناها الحصة خلصت — إعادة المحاولة بتستهلك منها أكتر وبتأخر
+    // الرسالة على المستخدم. 503 بس هي الازدحام اللي بيروح لوحده.
+    // A 429 is a spent quota: retrying eats more of it and delays telling the
+    // user. Only 503 is the transient congestion worth retrying.
+    if (response.status !== 503) break;
+  }
+
+  return { response, errorBody };
+}
+
+function retryFailure(attempt: Attempt): Response {
+  const status = attempt.response?.status ?? 0;
+  return json(
+    {
+      error: `Gemini returned ${status}`,
+      detail: attempt.errorBody || "no response",
+    },
+    status && status !== 200 ? status : 502,
+  );
 }
 
 /// بيرجّع الموديلات اللي بتدعم التوليد بالبث.
@@ -154,37 +206,23 @@ async function generateJson(
   }
   parts.push({ text: prompt });
 
-  let upstream: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1500));
-    upstream = await fetch(
-      `${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
-          contents: [{ role: "user", parts }],
-          generationConfig: {
-            temperature: 0.3,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-    if (upstream.ok || (upstream.status !== 503 && upstream.status !== 429)) break;
-    await upstream.text();
-  }
+  const attempt = await withRetry(() =>
+    fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
+      }),
+    })
+  );
 
-  if (!upstream || !upstream.ok) {
-    return json(
-      {
-        error: `Gemini returned ${upstream?.status ?? 0}`,
-        detail: upstream ? await upstream.text() : "no response",
-      },
-      upstream && upstream.status !== 200 ? upstream.status : 502,
-    );
-  }
+  if (!attempt.response?.ok) return retryFailure(attempt);
+  const upstream = attempt.response;
 
   const data = await upstream.json();
   const text = data?.candidates?.[0]?.content?.parts
@@ -238,30 +276,15 @@ async function streamSummary(
   // المحاولة هنا على السيرفر بدل ما نرمي الخطأ للمستخدم ويعيد إرسال المحاضرة كلها.
   // 503 overload is common on the free tier and usually clears in seconds.
   // Retrying here avoids making the user resend the whole lecture.
-  let upstream: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, attempt * 1500));
-    }
-    upstream = await fetch(
+  const attempt = await withRetry(() =>
+    fetch(
       `${GEMINI_BASE}/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body },
-    );
-    if (upstream.ok || (upstream.status !== 503 && upstream.status !== 429)) break;
-    // لازم نستهلك الجسم قبل المحاولة الجاية عشان ما نسيبش الاتصال معلق.
-    // Drain the body before retrying so the connection isn't left dangling.
-    await upstream.text();
-  }
+    )
+  );
 
-  if (!upstream || !upstream.ok || !upstream.body) {
-    return json(
-      {
-        error: `Gemini returned ${upstream?.status ?? 0}`,
-        detail: upstream ? await upstream.text() : "no response",
-      },
-      upstream && upstream.status !== 200 ? upstream.status : 502,
-    );
-  }
+  if (!attempt.response?.ok || !attempt.response.body) return retryFailure(attempt);
+  const upstream = attempt.response;
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();

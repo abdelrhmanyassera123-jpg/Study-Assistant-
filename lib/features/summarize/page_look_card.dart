@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
+import '../../models/models.dart';
 import '../../widgets/common.dart';
 import 'file_input.dart';
 import 'style_profile.dart';
@@ -54,18 +55,43 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
         bytes: picked.bytes,
       ));
 
-      final profile =
+      final analysis =
           await ref.read(activeSummarizerProvider).analyzeStyle(files);
-      await ref.read(repositoryProvider).saveStyleProfile(
-            subjectId: widget.subjectId,
-            profile: profile.toJson(),
-            sourceCount: files.length,
-          );
+      final repo = ref.read(repositoryProvider);
+
+      await repo.saveStyleProfile(
+        subjectId: widget.subjectId,
+        profile: analysis.profile.toJson(),
+        sourceCount: files.length,
+      );
+
+      // نفس الصورة بتدي الشكل **والنص**: النص بيتحفظ كمثال أسلوب، فالمستخدم
+      // مش محتاج يكتب تلخيصاته بإيده تاني.
+      // The same photo yields the look **and** the words: the words are stored
+      // as a style sample, so nothing has to be retyped by hand.
+      if (analysis.hasTranscript) {
+        await repo.addStyleSample(StyleSample(
+          id: '',
+          title: analysis.title.trim().isEmpty
+              ? picked.name.replaceAll(RegExp(r'\.[^.]+$'), '')
+              : analysis.title.trim(),
+          body: analysis.transcript.trim(),
+          subjectId: widget.subjectId,
+          createdAt: DateTime.now(),
+        ));
+        ref.invalidate(styleSamplesProvider);
+      }
+
       ref.invalidate(styleProfilesProvider);
 
       if (mounted) {
         setState(() => _busy = false);
-        showSnack(context, context.l.lookSaved);
+        showSnack(
+          context,
+          analysis.hasTranscript
+              ? context.l.lookAndTextSaved
+              : context.l.lookSaved,
+        );
       }
     } on SummarizerException catch (e) {
       if (mounted) {
