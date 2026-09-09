@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../models/models.dart';
+import 'style_profile.dart';
 import 'summarizer.dart';
 
 /// إعدادات الوصول لـ Gemini — **من ورا Edge Function**، مش مباشرة.
@@ -177,6 +178,119 @@ class GeminiSummarizer implements Summarizer {
         .map((m) => '$m')
         .where((n) => n.isNotEmpty)
         .toList();
+  }
+
+  @override
+  Future<StyleProfile> analyzeStyle(List<LectureFile> images) async {
+    if (images.isEmpty) {
+      throw const SummarizerException('محتاج صورة واحدة على الأقل.');
+    }
+    for (final image in images) {
+      if (image.isTooBig) {
+        throw SummarizerException(
+          'الصورة "${image.name}" كبيرة جدًا '
+          '(${image.megabytes.toStringAsFixed(1)} ميجا).',
+        );
+      }
+    }
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.model,
+      'system': VisualPrompts.analysisSystem,
+      'prompt': VisualPrompts.analysisPrompt,
+      'files': [
+        for (final image in images)
+          {'mime_type': image.mimeType, 'data': base64Encode(image.bytes)},
+      ],
+    });
+
+    final parsed = decodeModelJson(result);
+    if (parsed == null) {
+      throw const SummarizerException('الموديل رجّع تحليل مش مفهوم.');
+    }
+    return StyleProfile.fromJson(parsed);
+  }
+
+  @override
+  Future<SummaryPage> summarizeAsPage({
+    String lectureText = '',
+    LectureFile? file,
+    required List<StyleSample> samples,
+    required StyleProfile profile,
+  }) async {
+    if (config.model.isEmpty) {
+      throw const SummarizerException(
+        'مفيش موديل متحدد.',
+        hint: 'اختار موديل من إعدادات التلخيص.',
+      );
+    }
+    if (file != null && file.isTooBig) {
+      throw SummarizerException(
+        'الملف كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
+      );
+    }
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.model,
+      'system': VisualPrompts.blocksSystem(profile),
+      'prompt': StudyPrompt.build(
+        lectureText: lectureText,
+        hasFile: file != null,
+        samples: samples,
+      ),
+      if (file != null)
+        'files': [
+          {'mime_type': file.mimeType, 'data': base64Encode(file.bytes)},
+        ],
+    });
+
+    final parsed = decodeModelJson(result);
+    if (parsed == null) {
+      throw const SummarizerException('الموديل رجّع تلخيص مش مفهوم.');
+    }
+    final page = SummaryPage.fromJson(parsed);
+    if (page.blocks.isEmpty) {
+      throw const SummarizerException('التلخيص رجع فاضي — جرّب تاني.');
+    }
+    return page;
+  }
+
+  /// نداء واحد بيرجّع JSON — مشترك بين التحليل والتلخيص المنظم.
+  /// One JSON-returning call, shared by the analysis and the structured summary.
+  Future<Object?> _postJson(Map<String, dynamic> payload) async {
+    if (config.accessToken.isEmpty) {
+      throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
+    }
+
+    final http.Response response;
+    try {
+      response = await _client
+          .post(Uri.parse(config.functionUrl),
+              headers: _headers, body: jsonEncode(payload))
+          // التحليل البصري بياخد وقت أطول من التلخيص العادي.
+          // Vision analysis takes longer than a plain summary.
+          .timeout(const Duration(minutes: 3));
+    } catch (e) {
+      throw SummarizerException(
+        'مش قادر أوصل لخدمة التلخيص.',
+        hint: 'اتأكد إن الـ Edge Function متنشرة. ($e)',
+      );
+    }
+
+    if (response.statusCode != 200) {
+      throw SummarizerException(
+        _statusMessage(response.statusCode),
+        hint: _statusHint(response.statusCode) ??
+            utf8.decode(response.bodyBytes),
+      );
+    }
+
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final error = body['error'];
+    if (error != null) throw SummarizerException('$error');
+    return body['result'];
   }
 
   String _statusMessage(int status) => switch (status) {

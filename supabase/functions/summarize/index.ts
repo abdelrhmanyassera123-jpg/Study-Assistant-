@@ -132,6 +132,79 @@ async function listModels(apiKey: string): Promise<Response> {
   return json({ models, total: all.length });
 }
 
+/// بيطلب رد JSON منظم من Gemini ويرجّعه كما هو.
+/// Asks Gemini for one structured JSON reply and passes it straight back.
+///
+/// الردود المنظمة مش بتستفيد من البث — JSON نصّه مش مفيد قبل ما يكتمل — فبناخدها
+/// دفعة واحدة بدل ما نعقّد الطرفين.
+/// Structured replies gain nothing from streaming: half a JSON document is
+/// useless, so we take it in one piece instead of complicating both ends.
+async function generateJson(
+  apiKey: string,
+  model: string,
+  system: string,
+  prompt: string,
+  files?: Array<{ mime_type?: string; data?: string }>,
+): Promise<Response> {
+  const parts: Array<Record<string, unknown>> = [];
+  for (const f of files ?? []) {
+    if (f?.data && f.mime_type) {
+      parts.push({ inline_data: { mime_type: f.mime_type, data: f.data } });
+    }
+  }
+  parts.push({ text: prompt });
+
+  let upstream: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1500));
+    upstream = await fetch(
+      `${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature: 0.3,
+            responseMimeType: "application/json",
+          },
+        }),
+      },
+    );
+    if (upstream.ok || (upstream.status !== 503 && upstream.status !== 429)) break;
+    await upstream.text();
+  }
+
+  if (!upstream || !upstream.ok) {
+    return json(
+      {
+        error: `Gemini returned ${upstream?.status ?? 0}`,
+        detail: upstream ? await upstream.text() : "no response",
+      },
+      upstream && upstream.status !== 200 ? upstream.status : 502,
+    );
+  }
+
+  const data = await upstream.json();
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p: { text?: string }) => p.text ?? "")
+    .join("") ?? "";
+
+  const blocked = data?.promptFeedback?.blockReason;
+  if (blocked) return json({ error: `Gemini رفض المحتوى (${blocked}).` }, 422);
+
+  try {
+    // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل للتطبيق
+    // ويكسره وهو بيحاول يقراه.
+    // Parsed here so a non-JSON reply surfaces as a clear error instead of
+    // reaching the app and breaking it mid-read.
+    return json({ result: JSON.parse(text) });
+  } catch {
+    return json({ error: "الموديل رجّع رد مش JSON.", detail: text.slice(0, 400) }, 502);
+  }
+}
+
 /// بيبث التلخيص من Gemini للتطبيق على شكل NDJSON.
 /// Streams the summary from Gemini to the app as NDJSON.
 async function streamSummary(
@@ -139,15 +212,17 @@ async function streamSummary(
   model: string,
   system: string,
   prompt: string,
-  file?: { mime_type?: string; data?: string },
+  files?: Array<{ mime_type?: string; data?: string }>,
 ): Promise<Response> {
   // الملف بيتحط قبل النص: جوجل بتوصي بترتيب الملف أولاً عشان التعليمات
   // اللي بعده تتفسّر في سياقه.
   // The file goes before the text: Google recommends leading with the file so
   // the instructions that follow are read in its context.
   const parts: Array<Record<string, unknown>> = [];
-  if (file?.data && file.mime_type) {
-    parts.push({ inline_data: { mime_type: file.mime_type, data: file.data } });
+  for (const f of files ?? []) {
+    if (f?.data && f.mime_type) {
+      parts.push({ inline_data: { mime_type: f.mime_type, data: f.data } });
+    }
   }
   parts.push({ text: prompt });
 
@@ -295,6 +370,7 @@ Deno.serve(async (req: Request) => {
     system?: string;
     prompt?: string;
     file?: { mime_type?: string; data?: string };
+    files?: Array<{ mime_type?: string; data?: string }>;
   };
   try {
     body = await req.json();
@@ -315,7 +391,19 @@ Deno.serve(async (req: Request) => {
         body.model,
         body.system ?? "",
         body.prompt,
-        body.file,
+        body.files ?? (body.file ? [body.file] : undefined),
+      );
+    }
+
+    if (body.action === "json") {
+      if (!body.model) return json({ error: "model is required" }, 400);
+      if (!body.prompt) return json({ error: "prompt is required" }, 400);
+      return await generateJson(
+        apiKey,
+        body.model,
+        body.system ?? "",
+        body.prompt,
+        body.files ?? (body.file ? [body.file] : undefined),
       );
     }
 

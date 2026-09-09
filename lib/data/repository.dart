@@ -153,6 +153,46 @@ class Repository {
   Future<void> deleteStyleSample(String id) =>
       _db.from('style_samples').delete().eq('id', id);
 
+  // ------------------------------------------------------- style profiles
+  /// بيرجّع بروفايلات الشكل مفهرسة بالمادة (المفتاح null = البروفايل العام).
+  /// Returns look profiles keyed by subject; a null key is the general one.
+  Future<Map<String?, Map<String, dynamic>>> styleProfiles() async {
+    final rows = await _db.from('style_profiles').select();
+    return {
+      for (final r in rows)
+        r['subject_id'] as String?: (r['profile'] as Map).cast<String, dynamic>(),
+    };
+  }
+
+  /// بيحفظ البروفايل ويستبدل القديم لنفس المادة.
+  /// Saves the profile, replacing any earlier one for the same subject.
+  Future<void> saveStyleProfile({
+    String? subjectId,
+    required Map<String, dynamic> profile,
+    required int sourceCount,
+  }) async {
+    // بنمسح الأول لأن onConflict مش بيشتغل مع فهرس على تعبير (coalesce).
+    // Delete first: onConflict can't target an expression index (coalesce).
+    final existing = _db.from('style_profiles').delete();
+    await (subjectId == null
+        ? existing.isFilter('subject_id', null)
+        : existing.eq('subject_id', subjectId));
+
+    await _db.from('style_profiles').insert({
+      'user_id': _uid,
+      'subject_id': subjectId,
+      'profile': profile,
+      'source_count': sourceCount,
+    });
+  }
+
+  Future<void> deleteStyleProfile(String? subjectId) async {
+    final query = _db.from('style_profiles').delete();
+    await (subjectId == null
+        ? query.isFilter('subject_id', null)
+        : query.eq('subject_id', subjectId));
+  }
+
   /// عدد الكروت اللي اتراجعت في آخر 7 أيام.
   /// How many cards were reviewed in the last 7 days.
   Future<int> reviewsThisWeek() async {

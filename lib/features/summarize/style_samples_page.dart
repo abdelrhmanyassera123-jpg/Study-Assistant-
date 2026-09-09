@@ -5,6 +5,7 @@ import '../../core/l10n.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import 'page_look_card.dart';
 
 /// إدارة أمثلة الأسلوب — التلخيصات اللي المستخدم بيكتبها بنفسه.
 /// Manages the style examples: summaries the user writes themselves.
@@ -26,17 +27,29 @@ class StyleSamplesPage extends ConsumerWidget {
       ),
       body: samplesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) =>
-            ErrorView(error: e, onRetry: () => ref.invalidate(styleSamplesProvider)),
+        error: (e, _) => ErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(styleSamplesProvider),
+        ),
         data: (samples) {
           if (samples.isEmpty) {
-            return EmptyState(
-              icon: Icons.auto_awesome_outlined,
-              message: '${l.noSamplesYet}\n\n${l.samplesIntro}',
-              action: FilledButton.icon(
-                onPressed: () => openStyleSampleEditor(context, ref, null),
-                icon: const Icon(Icons.add_rounded),
-                label: Text(l.addStyleSample),
+            return PageBody(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 8),
+                  const PageLookCard(),
+                  EmptyState(
+                    icon: Icons.auto_awesome_outlined,
+                    message: '${l.noSamplesYet}\n\n${l.samplesIntro}',
+                    action: FilledButton.icon(
+                      onPressed: () =>
+                          openStyleSampleEditor(context, ref, null),
+                      icon: const Icon(Icons.add_rounded),
+                      label: Text(l.addStyleSample),
+                    ),
+                  ),
+                ],
               ),
             );
           }
@@ -55,13 +68,17 @@ class StyleSamplesPage extends ConsumerWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.lightbulb_outline_rounded,
-                          size: 18, color: scheme.onPrimaryContainer),
+                      Icon(
+                        Icons.lightbulb_outline_rounded,
+                        size: 18,
+                        color: scheme.onPrimaryContainer,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           l.samplesIntro,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: scheme.onPrimaryContainer,
                                 height: 1.5,
                               ),
@@ -70,6 +87,8 @@ class StyleSamplesPage extends ConsumerWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                const PageLookCard(),
                 const SizedBox(height: 16),
                 for (final s in samples)
                   Padding(
@@ -106,9 +125,7 @@ class _SampleCard extends ConsumerWidget {
             children: [
               Text(
                 sample.title.isEmpty ? context.l.sampleTitle : sample.title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
+                style: Theme.of(context).textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
@@ -116,9 +133,7 @@ class _SampleCard extends ConsumerWidget {
                 sample.body,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
+                style: Theme.of(context).textTheme.bodySmall
                     ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
               ),
               const SizedBox(height: 12),
@@ -128,9 +143,7 @@ class _SampleCard extends ConsumerWidget {
                   const Spacer(),
                   Text(
                     '~${sample.approxTokens} ${context.l.approxTokens}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
+                    style: Theme.of(context).textTheme.labelSmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ],
@@ -225,7 +238,9 @@ class _SampleEditorPageState extends ConsumerState<_SampleEditorPage> {
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: () async {
                 if (!await confirmDelete(context)) return;
-                await ref.read(repositoryProvider).deleteStyleSample(existing.id);
+                await ref
+                    .read(repositoryProvider)
+                    .deleteStyleSample(existing.id);
                 if (context.mounted) Navigator.pop(context, true);
               },
             ),
@@ -240,7 +255,9 @@ class _SampleEditorPageState extends ConsumerState<_SampleEditorPage> {
             const SizedBox(height: 8),
             TextField(
               controller: _title,
-              decoration: InputDecoration(labelText: '${l.sampleTitle} (${l.optional})'),
+              decoration: InputDecoration(
+                labelText: '${l.sampleTitle} (${l.optional})',
+              ),
             ),
             const SizedBox(height: 14),
             SubjectDropdown(

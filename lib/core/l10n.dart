@@ -275,6 +275,32 @@ class AppL10n {
         'The model reads the file itself — works for text and scanned PDFs.',
       );
   String get removeFile => _('شيل الملف', 'Remove file');
+
+  // ------------------------------------------------------- page look
+  String get pageLook => _('شكل صفحتك', 'Your page layout');
+  String get pageLookIntro => _(
+        'ارفع صور من كراستك، والتطبيق يحلل شكل صفحتك — ألوانك، مربعاتك، '
+            'ترتيب أقسامك — ويطلّع التلخيص بنفس التخطيط جاهز للطباعة.',
+        'Upload photos of your notebook and the app reads your page layout — '
+            'your colours, boxes and section order — then lays the summary out '
+            'the same way, ready to print.',
+      );
+  String get uploadHandwriting => _('ارفع صور تلخيصاتك', 'Upload page photos');
+  String get analyzingLook => _('بيحلل شكل الصفحة...', 'Reading your layout...');
+  String get lookSaved => _('شكل صفحتك اتسجل', 'Layout saved');
+  String get noLookYet => _('لسه ما حللناش شكل صفحتك', 'No layout read yet');
+  String get reanalyze => _('حلّل تاني', 'Read again');
+  String get removeLook => _('امسح الشكل', 'Delete layout');
+  String get colorsFound => _('الألوان', 'Colours');
+  String get sectionsFound => _('الأقسام', 'Sections');
+  String get handwritingNote => _(
+        'الصور بتتحلل وما بتتخزنش — التحليل بس هو اللي بيتحفظ.',
+        'Photos are analysed but never stored; only the analysis is saved.',
+      );
+  String get exportPng => _('صورة PNG', 'PNG image');
+  String get exportPdf => _('ملف PDF', 'PDF file');
+  String get styledPage => _('صفحة بشكلك', 'Your styled page');
+  String get plainText => _('نص عادي', 'Plain text');
 }
 
 class AppL10nDelegate extends LocalizationsDelegate<AppL10n> {

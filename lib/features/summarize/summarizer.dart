@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../models/models.dart';
+import 'style_profile.dart';
 
 /// ملف محاضرة بيتبعت للموديل زي ما هو بدل ما نستخرج نصه محليًا.
 /// A lecture file sent to the model as-is instead of extracting text locally.
@@ -58,6 +59,19 @@ abstract class Summarizer {
     String lectureText = '',
     LectureFile? file,
     required List<StyleSample> samples,
+  });
+
+  /// بيحلل صور تلخيصات المستخدم ويرجّع وصف شكل صفحته.
+  /// Reads photos of the user's summaries and returns their page layout.
+  Future<StyleProfile> analyzeStyle(List<LectureFile> images);
+
+  /// بيلخص ويرجّع بلوكات جاهزة للرسم بدل نص عادي.
+  /// Summarizes into drawable blocks instead of prose.
+  Future<SummaryPage> summarizeAsPage({
+    String lectureText,
+    LectureFile? file,
+    required List<StyleSample> samples,
+    required StyleProfile profile,
   });
 
   /// الموديلات المتاحة — بتستخدم كمان كفحص للاتصال.

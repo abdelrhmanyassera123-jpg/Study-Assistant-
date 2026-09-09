@@ -10,9 +10,12 @@ import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
 import 'document_text.dart';
+import 'export_page.dart';
 import 'file_input.dart';
 import 'model_settings_sheet.dart';
+import 'style_profile.dart';
 import 'style_samples_page.dart';
+import 'summary_page_view.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
 
@@ -29,6 +32,11 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
   ExtractedDocument? _extracted;
   LectureFile? _file;
+  SummaryPage? _page;
+
+  /// مرجع للصفحة المرسومة عشان نصوّرها وقت التصدير.
+  /// Handle on the drawn page so it can be captured for export.
+  final _exportKey = GlobalKey();
   String? _subjectId;
   String _output = '';
   bool _running = false;
@@ -105,11 +113,42 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     final samples = pickStyleSamples(allSamples, _subjectId);
     final summarizer = ref.read(activeSummarizerProvider);
 
+    // لو شكل صفحتك متحلل، بنطلب تلخيص منظم نقدر نرسمه ونصدّره صورة.
+    // With a saved layout we ask for structured blocks we can draw and export.
+    final profiles = ref.read(styleProfilesProvider).value ?? const {};
+    final rawProfile = profiles[_subjectId] ?? profiles[null];
+
     setState(() {
       _running = true;
       _output = '';
+      _page = null;
       _error = null;
     });
+
+    if (rawProfile != null) {
+      try {
+        final page = await summarizer.summarizeAsPage(
+          lectureText: text,
+          file: _file,
+          samples: samples,
+          profile: StyleProfile.fromJson(rawProfile),
+        );
+        if (mounted) {
+          setState(() {
+            _page = page;
+            _running = false;
+          });
+        }
+      } on SummarizerException catch (e) {
+        if (mounted) {
+          setState(() {
+            _running = false;
+            _error = e;
+          });
+        }
+      }
+      return;
+    }
 
     try {
       final stream = summarizer.summarize(
@@ -157,7 +196,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       await ref.read(repositoryProvider).addNote(Note(
             id: '',
             title: title.isEmpty ? l.theSummary : title,
-            body: _output.trim(),
+            body: _page?.toPlainText() ?? _output.trim(),
             subjectId: _subjectId,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
@@ -298,8 +337,23 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
               _ErrorBox(error: _error!),
             ],
 
+            // ------------------------------------------------ styled output
+            if (_page != null) ...[
+              SectionHeader(l.styledPage),
+              _StyledResult(
+                page: _page!,
+                profile: StyleProfile.fromJson(
+                  (ref.watch(styleProfilesProvider).value ?? const {})[_subjectId] ??
+                      (ref.watch(styleProfilesProvider).value ?? const {})[null] ??
+                      const {},
+                ),
+                exportKey: _exportKey,
+                onSaveNote: _saveAsNote,
+              ),
+            ],
+
             // ------------------------------------------------------ output
-            if (_output.isNotEmpty || _running) ...[
+            if (_output.isNotEmpty || (_running && _page == null)) ...[
               SectionHeader(
                 _running ? l.generating : l.theSummary,
                 action: _running
@@ -565,6 +619,102 @@ class _ErrorBox extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// الصفحة المرسومة بشكل المستخدم، مع أزرار التصدير.
+/// The page drawn in the user's own layout, with its export actions.
+class _StyledResult extends StatefulWidget {
+  const _StyledResult({
+    required this.page,
+    required this.profile,
+    required this.exportKey,
+    required this.onSaveNote,
+  });
+
+  final SummaryPage page;
+  final StyleProfile profile;
+  final GlobalKey exportKey;
+  final Future<void> Function() onSaveNote;
+
+  @override
+  State<_StyledResult> createState() => _StyledResultState();
+}
+
+class _StyledResultState extends State<_StyledResult> {
+  bool _exporting = false;
+
+  String get _fileName {
+    final base = widget.page.title.trim().isEmpty ? 'summary' : widget.page.title.trim();
+    // أسماء الملفات بتتكسر مع المحارف دي على بعض الأنظمة.
+    // These characters break file names on some systems.
+    return base.replaceAll(RegExp(r'[\/:*?"<>|]'), '-');
+  }
+
+  Future<void> _export({required bool asPdf}) async {
+    setState(() => _exporting = true);
+    try {
+      if (asPdf) {
+        downloadBytes(
+          '$_fileName.pdf',
+          'application/pdf',
+          await capturePdf(widget.exportKey),
+        );
+      } else {
+        downloadBytes(
+          '$_fileName.png',
+          'image/png',
+          await capturePng(widget.exportKey),
+        );
+      }
+    } catch (e) {
+      if (mounted) showSnack(context, '$e');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // الحدود دي هي اللي بتتصور وقت التصدير، فبتتلف الصفحة نفسها بس.
+        // This boundary is what gets captured, so it wraps the page alone.
+        RepaintBoundary(
+          key: widget.exportKey,
+          child: SummaryPageView(page: widget.page, profile: widget.profile),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _exporting ? null : () => _export(asPdf: false),
+                icon: const Icon(Icons.image_outlined),
+                label: Text(l.exportPng),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _exporting ? null : () => _export(asPdf: true),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: Text(l.exportPdf),
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: _exporting ? null : widget.onSaveNote,
+              icon: const Icon(Icons.save_alt_rounded),
+              label: Text(l.saveAsNote),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

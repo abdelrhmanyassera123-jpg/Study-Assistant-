@@ -38,6 +38,12 @@ final sessionsProvider =
 final weeklyReviewsProvider =
     FutureProvider<int>((ref) => ref.watch(repositoryProvider).reviewsThisWeek());
 
+/// بروفايلات الشكل حسب المادة.
+/// Look profiles by subject.
+final styleProfilesProvider = FutureProvider<Map<String?, Map<String, dynamic>>>(
+  (ref) => ref.watch(repositoryProvider).styleProfiles(),
+);
+
 final styleSamplesProvider =
     FutureProvider<List<StyleSample>>((ref) => ref.watch(repositoryProvider).styleSamples());
 
@@ -86,4 +92,5 @@ void invalidateAll(WidgetRef ref) {
   ref.invalidate(sessionsProvider);
   ref.invalidate(weeklyReviewsProvider);
   ref.invalidate(styleSamplesProvider);
+  ref.invalidate(styleProfilesProvider);
 }
