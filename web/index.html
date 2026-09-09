@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="مساعد المذاكرة — مؤقت وبطاقات مراجعة ومهام وإحصائيات. A bilingual study companion.">
+  <meta name="theme-color" content="#4F46E5">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="مساعد المذاكرة">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>مساعد المذاكرة · Study Assistant</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* شاشة تحميل بسيطة لحد ما فلاتر يرسم أول فريم.
+       A small splash until Flutter paints its first frame. */
+    body { margin: 0; background: #F7F7FB; }
+    @media (prefers-color-scheme: dark) { body { background: #131318; } }
+
+    #boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity .25s ease;
+    }
+    #boot.done { opacity: 0; pointer-events: none; }
+    #boot .ring {
+      width: 42px;
+      height: 42px;
+      border: 3px solid rgba(79, 70, 229, .2);
+      border-top-color: #4F46E5;
+      border-radius: 50%;
+      animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="boot"><div class="ring"></div></div>
+
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.getElementById('boot');
+      if (!boot) return;
+      boot.classList.add('done');
+      setTimeout(function () { boot.remove(); }, 300);
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

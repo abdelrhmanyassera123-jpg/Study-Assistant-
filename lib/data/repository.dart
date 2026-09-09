@@ -1,0 +1,166 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../models/models.dart';
+
+/// كل القراءة والكتابة من Supabase بتعدي من هنا.
+/// Every read and write to Supabase goes through this class.
+///
+/// مش بنبعت user_id في الفلترة لأن RLS في الداتابيز بيعمل كده أصلاً،
+/// بس بنبعته في الـ insert لأن العمود مطلوب.
+/// Queries don't filter by user_id — RLS already does that — but inserts
+/// must carry it because the column is NOT NULL.
+class Repository {
+  Repository(this._db);
+
+  final SupabaseClient _db;
+
+  String get _uid {
+    final id = _db.auth.currentUser?.id;
+    if (id == null) throw StateError('No signed-in user');
+    return id;
+  }
+
+  // ------------------------------------------------------------ subjects
+  // ملحوظة: order() في Supabase بيرتب تنازلي افتراضيًا، فلازم ascending: true
+  // كل ما نعوز الأقدم/الأصغر الأول.
+  // Note: Supabase's order() defaults to descending, so ascending: true is
+  // explicit wherever we want oldest/smallest first.
+  Future<List<Subject>> subjects() async {
+    final rows =
+        await _db.from('subjects').select().order('created_at', ascending: true);
+    return rows.map((r) => Subject.fromMap(r)).toList();
+  }
+
+  Future<void> addSubject(Subject s) =>
+      _db.from('subjects').insert(s.toInsert(_uid));
+
+  Future<void> updateSubject(Subject s) =>
+      _db.from('subjects').update(s.toUpdate()).eq('id', s.id);
+
+  Future<void> deleteSubject(String id) =>
+      _db.from('subjects').delete().eq('id', id);
+
+  // --------------------------------------------------------------- tasks
+  Future<List<Task>> tasks() async {
+    final rows = await _db
+        .from('tasks')
+        .select()
+        // المفتوح قبل الخالص، الأقرب تسليمًا الأول، واللي من غير تاريخ في الآخر.
+        // Open before done, soonest due first, undated last.
+        .order('is_done', ascending: true)
+        .order('due_date', ascending: true, nullsFirst: false)
+        .order('created_at', ascending: false);
+    return rows.map((r) => Task.fromMap(r)).toList();
+  }
+
+  Future<void> addTask(Task t) => _db.from('tasks').insert(t.toInsert(_uid));
+
+  Future<void> updateTask(Task t) =>
+      _db.from('tasks').update(t.toUpdate()).eq('id', t.id);
+
+  Future<void> setTaskDone(Task t, bool done) => _db.from('tasks').update({
+        'is_done': done,
+        'completed_at': done ? DateTime.now().toUtc().toIso8601String() : null,
+      }).eq('id', t.id);
+
+  Future<void> deleteTask(String id) => _db.from('tasks').delete().eq('id', id);
+
+  // --------------------------------------------------------------- notes
+  Future<List<Note>> notes() async {
+    final rows =
+        await _db.from('notes').select().order('updated_at', ascending: false);
+    return rows.map((r) => Note.fromMap(r)).toList();
+  }
+
+  Future<void> addNote(Note n) => _db.from('notes').insert(n.toInsert(_uid));
+
+  Future<void> updateNote(Note n) =>
+      _db.from('notes').update(n.toUpdate()).eq('id', n.id);
+
+  Future<void> deleteNote(String id) => _db.from('notes').delete().eq('id', id);
+
+  // ---------------------------------------------------------- flashcards
+  Future<List<Flashcard>> cards() async {
+    // الأقدم استحقاقًا الأول.
+    // Most overdue first.
+    final rows =
+        await _db.from('flashcards').select().order('due_at', ascending: true);
+    return rows.map((r) => Flashcard.fromMap(r)).toList();
+  }
+
+  Future<void> addCard(Flashcard c) =>
+      _db.from('flashcards').insert(c.toInsert(_uid));
+
+  Future<void> updateCard(Flashcard c) =>
+      _db.from('flashcards').update(c.toUpdate()).eq('id', c.id);
+
+  Future<void> deleteCard(String id) =>
+      _db.from('flashcards').delete().eq('id', id);
+
+  /// بيحفظ جدولة الكارت الجديدة ويسجل المراجعة في نفس الوقت.
+  /// Saves the card's new schedule and logs the review.
+  Future<Flashcard> reviewCard(Flashcard card, ReviewGrade grade) async {
+    final updated = card.schedule(grade);
+    await updateCard(updated);
+    await _db.from('card_reviews').insert({
+      'user_id': _uid,
+      'card_id': card.id,
+      'grade': grade.index,
+    });
+    return updated;
+  }
+
+  // ------------------------------------------------------------ sessions
+  /// جلسات آخر 90 يوم — كفاية لكل الرسوم البيانية والـ streak.
+  /// The last 90 days of sessions, enough for every chart and the streak.
+  Future<List<StudySession>> recentSessions() async {
+    final since = DateTime.now().subtract(const Duration(days: 90));
+    final rows = await _db
+        .from('study_sessions')
+        .select()
+        .gte('started_at', since.toUtc().toIso8601String())
+        .order('started_at', ascending: false);
+    return rows.map((r) => StudySession.fromMap(r)).toList();
+  }
+
+  Future<void> logSession({
+    required DateTime startedAt,
+    required int durationSeconds,
+    String? subjectId,
+  }) =>
+      _db.from('study_sessions').insert({
+        'user_id': _uid,
+        'subject_id': subjectId,
+        'started_at': startedAt.toUtc().toIso8601String(),
+        'duration_seconds': durationSeconds,
+      });
+
+  // -------------------------------------------------------- style samples
+  Future<List<StyleSample>> styleSamples() async {
+    final rows = await _db
+        .from('style_samples')
+        .select()
+        .order('created_at', ascending: false);
+    return rows.map((r) => StyleSample.fromMap(r)).toList();
+  }
+
+  Future<void> addStyleSample(StyleSample s) =>
+      _db.from('style_samples').insert(s.toInsert(_uid));
+
+  Future<void> updateStyleSample(StyleSample s) =>
+      _db.from('style_samples').update(s.toUpdate()).eq('id', s.id);
+
+  Future<void> deleteStyleSample(String id) =>
+      _db.from('style_samples').delete().eq('id', id);
+
+  /// عدد الكروت اللي اتراجعت في آخر 7 أيام.
+  /// How many cards were reviewed in the last 7 days.
+  Future<int> reviewsThisWeek() async {
+    final since = DateTime.now().subtract(const Duration(days: 7));
+    final rows = await _db
+        .from('card_reviews')
+        .select('id')
+        .gte('reviewed_at', since.toUtc().toIso8601String());
+    return rows.length;
+  }
+}
