@@ -385,3 +385,131 @@ class StyleSample {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }
+
+/// محاضرة في الجدول الأسبوعي.
+/// One lecture in the weekly timetable.
+///
+/// الجدول بيتكرر كل أسبوع، فاللي متخزن هو اليوم والوقت — والتاريخ الحقيقي
+/// بيتحسب من النهارده وقت العرض والتنبيه.
+/// The timetable repeats weekly, so what is stored is a day and a time; the
+/// real date is worked out from today when displaying and when reminding.
+@immutable
+class ScheduleEntry {
+  const ScheduleEntry({
+    required this.id,
+    required this.title,
+    required this.weekday,
+    required this.startMinutes,
+    this.endMinutes,
+    this.subjectId,
+    this.location = '',
+    this.lecturer = '',
+    this.notes = '',
+    this.remindMinutes,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+
+  /// 1 = الاتنين ... 7 = الأحد، زي `DateTime.weekday`.
+  /// 1 = Monday ... 7 = Sunday, as in `DateTime.weekday`.
+  final int weekday;
+
+  final int startMinutes;
+  final int? endMinutes;
+  final String? subjectId;
+  final String location;
+  final String lecturer;
+  final String notes;
+
+  /// التنبيه قبل المحاضرة بكام دقيقة — null معناها متوقف.
+  /// How many minutes before the lecture to remind; null means switched off.
+  final int? remindMinutes;
+
+  final DateTime createdAt;
+
+  bool get remindersOn => remindMinutes != null;
+
+  Duration get start => Duration(minutes: startMinutes);
+  Duration? get end => endMinutes == null ? null : Duration(minutes: endMinutes!);
+
+  /// أقرب وقت جاي للمحاضرة دي.
+  /// The next time this lecture comes round.
+  ///
+  /// المحاضرة اللي فاتت النهارده معادها بترجّع معاد الأسبوع الجاي، عشان
+  /// التنبيهات ما تفضلش تتحسب على وقت عدّى.
+  /// A lecture whose time has already passed today returns next week's slot, so
+  /// reminders are never computed against a moment that is gone.
+  DateTime nextOccurrence([DateTime? from]) {
+    final now = from ?? DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var days = (weekday - now.weekday) % 7;
+    var when = today.add(Duration(days: days, minutes: startMinutes));
+    if (!when.isAfter(now)) {
+      when = when.add(const Duration(days: 7));
+    }
+    return when;
+  }
+
+  ScheduleEntry copyWith({
+    String? title,
+    int? weekday,
+    int? startMinutes,
+    int? endMinutes,
+    String? subjectId,
+    String? location,
+    String? lecturer,
+    String? notes,
+    int? remindMinutes,
+    bool clearReminder = false,
+    bool clearSubject = false,
+    bool clearEnd = false,
+  }) =>
+      ScheduleEntry(
+        id: id,
+        title: title ?? this.title,
+        weekday: weekday ?? this.weekday,
+        startMinutes: startMinutes ?? this.startMinutes,
+        endMinutes: clearEnd ? null : (endMinutes ?? this.endMinutes),
+        subjectId: clearSubject ? null : (subjectId ?? this.subjectId),
+        location: location ?? this.location,
+        lecturer: lecturer ?? this.lecturer,
+        notes: notes ?? this.notes,
+        remindMinutes:
+            clearReminder ? null : (remindMinutes ?? this.remindMinutes),
+        createdAt: createdAt,
+      );
+
+  factory ScheduleEntry.fromMap(Map<String, dynamic> m) => ScheduleEntry(
+        id: m['id'] as String,
+        title: m['title'] as String,
+        weekday: (m['weekday'] as num).toInt(),
+        startMinutes: (m['start_minutes'] as num).toInt(),
+        endMinutes: (m['end_minutes'] as num?)?.toInt(),
+        subjectId: m['subject_id'] as String?,
+        location: (m['location'] as String?) ?? '',
+        lecturer: (m['lecturer'] as String?) ?? '',
+        notes: (m['notes'] as String?) ?? '',
+        remindMinutes: (m['remind_minutes'] as num?)?.toInt(),
+        createdAt: _parseDate(m['created_at']) ?? DateTime.now(),
+      );
+
+  Map<String, dynamic> toInsert(String userId) => {
+        'user_id': userId,
+        ...toUpdate(),
+      };
+
+  Map<String, dynamic> toUpdate() => {
+        'title': title,
+        'weekday': weekday,
+        'start_minutes': startMinutes,
+        'end_minutes': endMinutes,
+        'subject_id': subjectId,
+        'location': location,
+        'lecturer': lecturer,
+        'notes': notes,
+        'remind_minutes': remindMinutes,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+}

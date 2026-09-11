@@ -16,11 +16,17 @@
 // =====================================================================
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_UPLOAD = "https://generativelanguage.googleapis.com/upload/v1beta";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
+  // هيدرز الرفع لازم تتذكر بالاسم: المتصفح بيرفض الطلب قبل ما يوصل أصلاً لو
+  // هيدر مش مسموح بيه.
+  // The upload headers must be named: the browser refuses the request before it
+  // is even sent when one of them is not allowed.
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, " +
+    "x-file-mime, x-file-size, x-file-name",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -246,6 +252,158 @@ function rankModels(body: {
   return models;
 }
 
+/// ملف داخل الطلب: إما بايتاته جوه الطلب، أو إشارة لملف مرفوع عند جوجل.
+/// A file in the request: either its bytes inline, or a pointer at a file
+/// already uploaded to Google.
+interface RequestFile {
+  mime_type?: string;
+  data?: string;
+  file_uri?: string;
+}
+
+/// بيحوّل الملفات لأجزاء زي ما Gemini مستنيها.
+/// Turns the files into the parts Gemini expects.
+///
+/// الملف الكبير ما بيعديش جوه الطلب: حد النداء الواحد 20 ميجا، وترميز base64
+/// بيزود الحجم الثلث. الملفات الكبيرة بتترفع مرة واحدة على Files API وبعدين
+/// بيتشار لها بالرابط، والمحاضرة الساعتين بتعدي في نداء واحد.
+/// A large file cannot travel inside the request: one call caps at 20 MB and
+/// base64 adds a third on top. Large files are uploaded once to the Files API
+/// and then referenced by URI, which lets a two-hour lecture go in one call.
+function fileParts(files?: RequestFile[]): Array<Record<string, unknown>> {
+  const parts: Array<Record<string, unknown>> = [];
+  for (const f of files ?? []) {
+    if (!f?.mime_type) continue;
+    if (f.file_uri) {
+      parts.push({ file_data: { mime_type: f.mime_type, file_uri: f.file_uri } });
+    } else if (f.data) {
+      parts.push({ inline_data: { mime_type: f.mime_type, data: f.data } });
+    }
+  }
+  return parts;
+}
+
+/// بيرفع ملف لـ Files API بتاعة جوجل **بالتمرير**.
+/// Streams a file up to Google's Files API.
+///
+/// جسم الطلب بيتمرر زي ما هو من المتصفح لجوجل من غير ما يتجمع في ذاكرة
+/// الفنكشن. ده الفرق بين محاضرة 80 ميجا بتعدي، وبين WORKER_RESOURCE_LIMIT.
+/// The request body is piped straight from the browser to Google without ever
+/// being gathered in the function's memory. That is the difference between an
+/// 80 MB lecture going through and a WORKER_RESOURCE_LIMIT.
+///
+/// الملف بيقعد عند جوجل 48 ساعة وبعدين بيتمسح لوحده — مفيش تخزين بنديره.
+/// The file lives 48 hours at Google then deletes itself; there is no storage
+/// for us to manage.
+async function uploadFile(apiKey: string, req: Request): Promise<Response> {
+  const mime = req.headers.get("x-file-mime") ?? "application/octet-stream";
+  const size = req.headers.get("x-file-size") ?? "";
+  const name = req.headers.get("x-file-name") ?? "lecture";
+
+  if (!req.body) return json({ error: "no file body" }, 400);
+  if (!/^\d+$/.test(size)) return json({ error: "x-file-size is required" }, 400);
+
+  // 1) بنقول لجوجل إن في رفع جاي وبكام — بترجّع رابط الرفع.
+  // 1) Tell Google a upload is coming and how big; it returns the upload URL.
+  const start = await fetch(`${GEMINI_UPLOAD}/files?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": size,
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ file: { display_name: name } }),
+  });
+
+  const uploadUrl = start.headers.get("x-goog-upload-url");
+  if (!start.ok || !uploadUrl) {
+    return json({
+      error: `Gemini returned ${start.status}`,
+      detail: await start.text(),
+    }, start.status === 200 ? 502 : start.status);
+  }
+  await start.text();
+
+  // 2) البايتات بتتمرر من طلب المتصفح لطلب جوجل مباشرة.
+  // 2) The bytes are piped from the browser's request into Google's.
+  const put = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": size,
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: req.body,
+    // مطلوبة عشان الجسم يبقى تيار مش بايتات متجمعة.
+    // Required for the body to be a stream rather than gathered bytes.
+    duplex: "half",
+  } as RequestInit);
+
+  if (!put.ok) {
+    return json({
+      error: `Gemini returned ${put.status}`,
+      detail: await put.text(),
+    }, put.status);
+  }
+
+  const info = await put.json();
+  const file = info?.file ?? {};
+  if (!file.uri || !file.name) {
+    return json({ error: "الرفع رجع من غير رابط ملف." }, 502);
+  }
+
+  // 3) الصوت بيتعالج عند جوجل قبل ما يبقى صالح للقراية.
+  // 3) Audio is processed at Google's end before it can be read.
+  const ready = await waitForActive(apiKey, file.name, file.state);
+  return json({
+    uri: file.uri,
+    name: file.name,
+    mime_type: file.mimeType ?? mime,
+    state: ready,
+  });
+}
+
+/// بيستنى الملف لحد ما يبقى جاهز، وبيسيبه لو طوّل.
+/// Waits until the file is ready, giving up if it takes too long.
+///
+/// الفنكشن نفسها ليها سقف وقت، فبنستنى لحد حد معقول وبنرجّع الحالة زي ما هي؛
+/// التطبيق بيقدر يسأل تاني بدل ما الطلب يموت.
+/// The function has its own time budget, so we wait up to a sane bound and
+/// return the state as it stands; the app can ask again instead of the request
+/// dying.
+async function waitForActive(
+  apiKey: string,
+  name: string,
+  state: string,
+  attempts = 12,
+): Promise<string> {
+  let current = state;
+  for (let i = 0; i < attempts && current === "PROCESSING"; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const res = await fetch(`${GEMINI_BASE}/${name}?key=${apiKey}`);
+    if (!res.ok) {
+      await res.text();
+      break;
+    }
+    current = (await res.json())?.state ?? current;
+  }
+  return current;
+}
+
+/// بيرجّع حالة ملف مرفوع.
+/// Returns an uploaded file's state.
+async function fileState(apiKey: string, name: string): Promise<Response> {
+  const res = await fetch(`${GEMINI_BASE}/${name}?key=${apiKey}`);
+  if (!res.ok) {
+    return json({ error: `Gemini returned ${res.status}`, detail: await res.text() },
+      res.status);
+  }
+  const body = await res.json();
+  return json({ state: body?.state ?? "UNKNOWN", uri: body?.uri });
+}
+
 /// بيطلب رد JSON منظم من Gemini ويرجّعه كما هو.
 /// Asks Gemini for one structured JSON reply and passes it straight back.
 ///
@@ -258,14 +416,9 @@ async function generateJson(
   candidates: string[],
   system: string,
   prompt: string,
-  files?: Array<{ mime_type?: string; data?: string }>,
+  files?: RequestFile[],
 ): Promise<Response> {
-  const parts: Array<Record<string, unknown>> = [];
-  for (const f of files ?? []) {
-    if (f?.data && f.mime_type) {
-      parts.push({ inline_data: { mime_type: f.mime_type, data: f.data } });
-    }
-  }
+  const parts = fileParts(files);
   parts.push({ text: prompt });
 
   const body = JSON.stringify({
@@ -314,26 +467,24 @@ async function streamSummary(
   candidates: string[],
   system: string,
   prompt: string,
-  files?: Array<{ mime_type?: string; data?: string }>,
+  files?: RequestFile[],
+  temperature = 0.4,
 ): Promise<Response> {
   // الملف بيتحط قبل النص: جوجل بتوصي بترتيب الملف أولاً عشان التعليمات
   // اللي بعده تتفسّر في سياقه.
   // The file goes before the text: Google recommends leading with the file so
   // the instructions that follow are read in its context.
-  const parts: Array<Record<string, unknown>> = [];
-  for (const f of files ?? []) {
-    if (f?.data && f.mime_type) {
-      parts.push({ inline_data: { mime_type: f.mime_type, data: f.data } });
-    }
-  }
+  const parts = fileParts(files);
   parts.push({ text: prompt });
 
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts }],
-    // حرارة منخفضة: عايزين اتباع أمين للأسلوب، مش إبداع.
-    // Low temperature: faithful style-following, not invention.
-    generationConfig: { temperature: 0.4 },
+    // حرارة منخفضة: عايزين اتباع أمين للأسلوب، مش إبداع. والتفريغ الصوتي
+    // بيبعت صفر — نقل حرفي مش صياغة.
+    // Low temperature: faithful style-following, not invention. Transcription
+    // sends zero: it copies what was said rather than phrasing it.
+    generationConfig: { temperature },
   });
 
   // الازدحام (503) شائع على الخطة المجانية وبيروح لوحده بعد ثواني. بنعيد
@@ -463,6 +614,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: "لازم تكون مسجّل دخول." }, 401);
   }
 
+  const apiKeyEarly = Deno.env.get("GEMINI_API_KEY");
+
+  // الرفع بيتحدد من الرابط مش من الجسم: الجسم نفسه هو الملف، وقرايته كـ JSON
+  // هي بالظبط اللي بنحاول نتجنبه.
+  // Uploads are named in the URL rather than the body: the body *is* the file,
+  // and reading it as JSON is exactly what we are avoiding.
+  const action = new URL(req.url).searchParams.get("action");
+  if (action === "upload") {
+    if (!apiKeyEarly) return json({ error: "GEMINI_API_KEY مش متظبط." }, 500);
+    try {
+      return await uploadFile(apiKeyEarly, req);
+    } catch (e) {
+      return json({ error: `${e}` }, 500);
+    }
+  }
+
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) {
     return json(
@@ -479,8 +646,10 @@ Deno.serve(async (req: Request) => {
     model?: string;
     system?: string;
     prompt?: string;
-    file?: { mime_type?: string; data?: string };
-    files?: Array<{ mime_type?: string; data?: string }>;
+    file?: RequestFile;
+    files?: RequestFile[];
+    temperature?: number;
+    file_name?: string;
   };
   try {
     body = await req.json();
@@ -493,6 +662,11 @@ Deno.serve(async (req: Request) => {
       return await listModels(apiKey);
     }
 
+    if (body.action === "file_state") {
+      if (!body.file_name) return json({ error: "file_name is required" }, 400);
+      return await fileState(apiKey, body.file_name);
+    }
+
     if (body.action === "summarize") {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
       return await streamSummary(
@@ -501,6 +675,7 @@ Deno.serve(async (req: Request) => {
         body.system ?? "",
         body.prompt,
         body.files ?? (body.file ? [body.file] : undefined),
+        typeof body.temperature === "number" ? body.temperature : undefined,
       );
     }
 

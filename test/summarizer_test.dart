@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -33,8 +34,28 @@ http.Client fakeFunction(
   Map<String, dynamic>? errorLine,
   bool splitAcrossPackets = false,
   void Function(http.BaseRequest req, Map<String, dynamic> body)? capture,
+  void Function(http.BaseRequest req, Uint8List bytes)? onUpload,
+  Map<String, dynamic>? uploadReply,
+  int uploadStatus = 200,
 }) {
   return MockClient.streaming((request, bodyStream) async {
+    // الرفع بيتحدد من الرابط، وجسمه بايتات مش JSON.
+    // An upload is named in the URL and its body is bytes, not JSON.
+    if (request.url.queryParameters['action'] == 'upload') {
+      final bytes = await bodyStream.toBytes();
+      onUpload?.call(request, bytes);
+      return http.StreamedResponse(
+        Stream.value(utf8.encode(jsonEncode(uploadReply ??
+            {
+              'uri': 'https://generativelanguage.googleapis.com/v1beta/files/x1',
+              'name': 'files/x1',
+              'mime_type': 'audio/mp4',
+              'state': 'ACTIVE',
+            }))),
+        uploadStatus,
+      );
+    }
+
     if (capture != null) {
       final raw = await bodyStream.bytesToString();
       capture(request, jsonDecode(raw) as Map<String, dynamic>);
@@ -116,6 +137,143 @@ void main() {
       expect(
         s.summarize(lectureText: 'x', samples: const []),
         emitsError(isA<SummarizerException>()),
+      );
+    });
+  });
+
+  group('transcription', () {
+    test('sends the audio with the transcribing instructions, not the style ones',
+        () async {
+      Map<String, dynamic>? body;
+      final s = GeminiSummarizer(
+        config,
+        client: fakeFunction(['السلام عليكم، ', 'نبدأ المحاضرة'],
+            capture: (_, b) => body = b),
+      );
+
+      final text = await s.transcribe(LectureFile(
+        name: 'تسجيل (1)',
+        mimeType: 'audio/webm',
+        bytes: Uint8List.fromList([1, 2, 3]),
+      ));
+
+      expect(text, 'السلام عليكم، نبدأ المحاضرة');
+      expect(body!['system'], StudyPrompt.transcribeSystem);
+      expect(body!['system'], isNot(StudyPrompt.system));
+      expect(body!['system'], isNot(contains('بأسلوب طالب')));
+      expect((body!['files'] as List).single['mime_type'], 'audio/webm');
+    });
+
+    // التفريغ نقل مش صياغة: أي حرارة فوق الصفر بتخلي الموديل "يحسّن" الكلام
+    // اللي مش سامعه كويس.
+    // Transcription copies rather than phrases: any temperature above zero lets
+    // the model "improve" what it could not hear.
+    test('asks for zero temperature', () async {
+      Map<String, dynamic>? body;
+      final s = GeminiSummarizer(
+        config,
+        client: fakeFunction(['x'], capture: (_, b) => body = b),
+      );
+
+      await s.transcribe(LectureFile(
+        name: 'a',
+        mimeType: 'audio/webm',
+        bytes: Uint8List(3),
+      ));
+
+      expect(body!['temperature'], 0);
+    });
+
+    // المحاضرة الساعتين مش بتعدي جوه الطلب مهما عملنا. بترفع مرة، وبعدين
+    // التفريغ بيشاور على رابطها — من غير ده الملف الكبير كان بيترفض خالص.
+    // A two-hour lecture cannot ride inside the request whatever we do. It
+    // uploads once and the transcription points at its URI; without this the
+    // large file was simply refused.
+    test('a large recording is uploaded once, then referenced by URI', () async {
+      http.BaseRequest? uploadRequest;
+      Uint8List? uploadedBytes;
+      Map<String, dynamic>? body;
+
+      final s = GeminiSummarizer(
+        config,
+        client: fakeFunction(
+          ['اللي اتقال'],
+          capture: (_, b) => body = b,
+          onUpload: (r, bytes) {
+            uploadRequest = r;
+            uploadedBytes = bytes;
+          },
+        ),
+      );
+
+      final audio = LectureFile(
+        name: 'محاضرة الفيزياء.m4a',
+        mimeType: 'audio/mp4',
+        bytes: Uint8List(LectureFile.inlineBytes + 1),
+      );
+
+      final text = await s.transcribe(audio);
+
+      expect(text, 'اللي اتقال');
+      expect(uploadedBytes, hasLength(audio.bytes.length));
+      expect(uploadRequest!.headers['x-file-size'], '${audio.bytes.length}');
+      expect(uploadRequest!.headers['x-file-mime'], 'audio/mp4');
+
+      final part = (body!['files'] as List).single as Map<String, dynamic>;
+      expect(part['file_uri'], contains('/files/x1'));
+      expect(part.containsKey('data'), isFalse);
+    });
+
+    // الرحلة الزيادة لجوجل مش هتفيد في مقطع صغير، والتسجيل من التطبيق كله
+    // مقاطع صغيرة.
+    // The extra trip to Google buys nothing for a small part, and a recording
+    // made in the app is all small parts.
+    test('a small part still travels inside the request', () async {
+      var uploads = 0;
+      Map<String, dynamic>? body;
+
+      final s = GeminiSummarizer(
+        config,
+        client: fakeFunction(
+          ['x'],
+          capture: (_, b) => body = b,
+          onUpload: (_, _) => uploads++,
+        ),
+      );
+
+      await s.transcribe(LectureFile(
+        name: 'مقطع',
+        mimeType: 'audio/webm',
+        bytes: Uint8List(200 * 1024),
+      ));
+
+      expect(uploads, 0);
+      final part = (body!['files'] as List).single as Map<String, dynamic>;
+      expect(part['data'], isNotNull);
+      expect(part.containsKey('file_uri'), isFalse);
+    });
+
+    test('a failed upload says the file could not be read', () async {
+      final s = GeminiSummarizer(
+        config,
+        client: fakeFunction(
+          const ['x'],
+          uploadReply: {
+            'uri': 'https://generativelanguage.googleapis.com/v1beta/files/x1',
+            'name': 'files/x1',
+            'state': 'FAILED',
+          },
+        ),
+      );
+
+      await expectLater(
+        s.transcribe(LectureFile(
+          name: 'broken.m4a',
+          mimeType: 'audio/mp4',
+          bytes: Uint8List(LectureFile.inlineBytes + 1),
+        )),
+        throwsA(isA<SummarizerException>()
+            .having((e) => e.message, 'message', contains('مش قادرة تقراه'))),
       );
     });
   });
@@ -254,6 +412,29 @@ void main() {
       expect(prompt, contains('مثال 1'));
       expect(prompt, contains('مثال 2'));
       expect(prompt, contains('مثال 3'));
+    });
+
+    // السلايدات والتسجيل مصدرين لنفس المحاضرة. لو النص اتشال لما يبقى في ملف،
+    // شرح المحاضر كله بيضيع والتلخيص بيطلع من العناوين بس.
+    // Slides and a recording are two sources for one lecture. Dropping the text
+    // whenever a file is present throws away everything the lecturer said and
+    // leaves a summary built from headings.
+    test('keeps the transcript when a file is attached too', () {
+      final prompt = StudyPrompt.build(
+        lectureText: 'المحاضر قال إن الجهد بيتقاس بالفولت',
+        hasFile: true,
+        samples: const [],
+      );
+
+      expect(prompt, contains('الملف المرفق'));
+      expect(prompt, contains('المحاضر قال إن الجهد بيتقاس بالفولت'));
+    });
+
+    test('points at the file alone when there is no text', () {
+      final prompt =
+          StudyPrompt.build(lectureText: '', hasFile: true, samples: const []);
+
+      expect(prompt, contains('(المحاضرة في الملف المرفق)'));
     });
 
     test('falls back to a plain summary when there are no examples', () {

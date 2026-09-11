@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/format.dart';
 import '../../core/l10n.dart';
+import '../../core/math_text.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../study_ai/study_tools_row.dart';
 
 class NotesPage extends ConsumerStatefulWidget {
   const NotesPage({super.key});
@@ -37,43 +40,48 @@ class _NotesPageState extends ConsumerState<NotesPage> {
         label: Text(l.addNote),
       ),
       body: notesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorView(error: e, onRetry: () => ref.invalidate(notesProvider)),
+        loading: () => const LoadingView(),
+        error: (e, _) =>
+            ErrorView(error: e, onRetry: () => ref.invalidate(notesProvider)),
         data: (all) {
-          final q = _query.trim().toLowerCase();
-          final visible = q.isEmpty
-              ? all
-              : all
-                  .where((n) =>
-                      n.title.toLowerCase().contains(q) || n.body.toLowerCase().contains(q))
-                  .toList();
-
           if (all.isEmpty) {
             return EmptyState(
               icon: Icons.description_outlined,
-              message: l.noNotesYet,
+              title: l.noNotesYet,
+              message: l.notesEmptyHint,
               action: FilledButton.icon(
                 onPressed: () => openNoteEditor(context, ref, null),
-                icon: const Icon(Icons.add_rounded),
+                icon: const Icon(Icons.add_rounded, size: 19),
                 label: Text(l.addNote),
               ),
             );
           }
 
+          final q = _query.trim().toLowerCase();
+          final visible = q.isEmpty
+              ? all
+              : all
+                  .where((n) =>
+                      n.title.toLowerCase().contains(q) ||
+                      n.body.toLowerCase().contains(q))
+                  .toList();
+
           return PageBody(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 8),
+                const SizedBox(height: Insets.sm),
                 TextField(
                   controller: _search,
                   onChanged: (v) => setState(() => _query = v),
+                  textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: l.searchNotes,
                     prefixIcon: const Icon(Icons.search_rounded),
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
+                            tooltip: l.clear,
                             icon: const Icon(Icons.clear_rounded),
                             onPressed: () {
                               _search.clear();
@@ -82,15 +90,25 @@ class _NotesPageState extends ConsumerState<NotesPage> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: Insets.md),
+                Text(
+                  l.notesCount(visible.length),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: Insets.lg),
                 if (visible.isEmpty)
-                  EmptyState(icon: Icons.search_off_rounded, message: l.noResults)
+                  EmptyState(
+                    icon: Icons.search_off_rounded,
+                    message: l.noResults,
+                  )
                 else
-                  for (final n in visible)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _NoteCard(note: n),
-                    ),
+                  CardGrid(
+                    children: [
+                      for (final n in visible) _NoteCard(note: n),
+                    ],
+                  ),
               ],
             ),
           );
@@ -100,6 +118,8 @@ class _NotesPageState extends ConsumerState<NotesPage> {
   }
 }
 
+/// بطاقة ملاحظة — عنوان، مقتطف، وتاريخ آخر تعديل.
+/// A note card: its title, an excerpt, and when it was last touched.
 class _NoteCard extends ConsumerWidget {
   const _NoteCard({required this.note});
 
@@ -108,57 +128,45 @@ class _NoteCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final subject = ref.watch(subjectMapProvider)[note.subjectId];
 
-    return Card(
-      child: InkWell(
-        onTap: () => openNoteEditor(context, ref, note),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return AppCard(
+      onTap: () => openNoteEditor(context, ref, note),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            note.title.isEmpty ? context.l.noteTitle : note.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: text.titleSmall,
+          ),
+          if (note.body.isNotEmpty) ...[
+            const SizedBox(height: Insets.sm),
+            Text(
+              readableMath(note.body),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+          const SizedBox(height: Insets.lg),
+          Row(
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      note.title.isEmpty ? context.l.noteTitle : note.title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    Fmt.date(context, note.updatedAt),
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              if (note.body.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  note.body,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
-                ),
-              ],
               if (subject != null) ...[
-                const SizedBox(height: 12),
                 SubjectChip(subject: subject, dense: true),
+                const SizedBox(width: Insets.sm),
               ],
+              const Spacer(),
+              Text(
+                Fmt.date(context, note.updatedAt),
+                style:
+                    text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -250,15 +258,21 @@ class _NoteEditorPageState extends ConsumerState<_NoteEditorPage> {
                 if (context.mounted) Navigator.pop(context, true);
               },
             ),
-          TextButton(onPressed: _busy ? null : _save, child: Text(l.save)),
-          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
+            child: FilledButton(
+              onPressed: _busy ? null : _save,
+              child: Text(l.save),
+            ),
+          ),
         ],
       ),
       body: PageBody(
+        maxWidth: 820,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 8),
+            const SizedBox(height: Insets.sm),
             TextField(
               controller: _title,
               autofocus: existing == null,
@@ -268,22 +282,34 @@ class _NoteEditorPageState extends ConsumerState<_NoteEditorPage> {
                   ?.copyWith(fontWeight: FontWeight.w700),
               decoration: InputDecoration(labelText: l.noteTitle),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             SubjectDropdown(
               subjects: subjects,
               value: _subjectId,
               onChanged: (v) => setState(() => _subjectId = v),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             TextField(
               controller: _body,
               maxLines: null,
               minLines: 12,
               keyboardType: TextInputType.multiline,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: l.noteBody,
                 alignLabelWithHint: true,
               ),
+            ),
+
+            // الأدوات على محتوى الملاحظة نفسه: الملاحظة هنا هي المحاضرة
+            // الملخّصة، وهي أنسب حاجة تتعمل منها كروت أو تتسأل فيها.
+            // The tools work on the note's own text: a note here is the
+            // summarized lecture, and it is the best thing to build cards from
+            // or to ask about.
+            StudyToolsSection(
+              title: _title.text.trim().isEmpty ? l.theSummary : _title.text,
+              source: _body.text,
+              subjectId: _subjectId,
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/format.dart';
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
@@ -32,15 +33,22 @@ class _TasksPageState extends ConsumerState<TasksPage> {
         label: Text(l.addTask),
       ),
       body: tasksAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorView(error: e, onRetry: () => ref.invalidate(tasksProvider)),
+        loading: () => const LoadingView(),
+        error: (e, _) =>
+            ErrorView(error: e, onRetry: () => ref.invalidate(tasksProvider)),
         data: (all) {
           final visible = all
               .where((t) => t.isDone == _showDone)
-              .where((t) => _subjectFilter == null || t.subjectId == _subjectFilter)
+              .where((t) =>
+                  _subjectFilter == null || t.subjectId == _subjectFilter)
               .toList();
 
+          // قايمة المهام أضيق من باقي الصفحات: السطر الطويل أصعب في المسح
+          // السريع بالعين، والمهمة المفروض تتقرا بنظرة.
+          // The task list is narrower than other pages: long lines are harder
+          // to scan, and a task should be readable at a glance.
           return PageBody(
+            maxWidth: 760,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -55,8 +63,18 @@ class _TasksPageState extends ConsumerState<TasksPage> {
                 ),
                 if (visible.isEmpty)
                   EmptyState(
-                    icon: Icons.checklist_rounded,
-                    message: _showDone ? l.noTasksDone : l.noTasksYet,
+                    icon: _showDone
+                        ? Icons.done_all_rounded
+                        : Icons.checklist_rounded,
+                    title: _showDone ? l.noTasksDone : l.noTasksYet,
+                    message: _showDone ? l.doneHint : l.tasksEmptyHint,
+                    action: _showDone
+                        ? null
+                        : FilledButton.icon(
+                            onPressed: () => openTaskEditor(context, ref, null),
+                            icon: const Icon(Icons.add_rounded, size: 19),
+                            label: Text(l.addTask),
+                          ),
                   )
                 else
                   ..._buildGroups(visible),
@@ -73,7 +91,10 @@ class _TasksPageState extends ConsumerState<TasksPage> {
   List<Widget> _buildGroups(List<Task> tasks) {
     final l = context.l;
     if (_showDone) {
-      return [for (final t in tasks) _tile(t)];
+      return [
+        const SizedBox(height: Insets.lg),
+        for (final t in tasks) _tile(t),
+      ];
     }
 
     final overdue = tasks.where((t) => t.isOverdue).toList();
@@ -84,29 +105,61 @@ class _TasksPageState extends ConsumerState<TasksPage> {
     final undated = tasks.where((t) => t.dueDate == null).toList();
 
     return [
-      if (overdue.isNotEmpty) ...[
-        SectionHeader(l.overdue),
-        for (final t in overdue) _tile(t),
-      ],
-      if (today.isNotEmpty) ...[
-        SectionHeader(l.today),
-        for (final t in today) _tile(t),
-      ],
-      if (upcoming.isNotEmpty) ...[
-        SectionHeader(l.upcomingTasks),
-        for (final t in upcoming) _tile(t),
-      ],
-      if (undated.isNotEmpty) ...[
-        SectionHeader(l.noDueDate),
-        for (final t in undated) _tile(t),
-      ],
+      for (final (title, group) in [
+        (l.overdue, overdue),
+        (l.today, today),
+        (l.upcomingTasks, upcoming),
+        (l.noDueDate, undated),
+      ])
+        if (group.isNotEmpty) ...[
+          _GroupHeader(title: title, count: group.length),
+          for (final t in group) _tile(t),
+        ],
     ];
   }
 
   Widget _tile(Task task) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: Insets.sm),
         child: TaskTile(task: task),
       );
+}
+
+/// عنوان مجموعة بعدّادها — العدد بيوضّح حجم الشغل من غير ما تعدّ بنفسك.
+/// A group heading with its count, so the size of the pile shows without
+/// counting rows.
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Insets.xxl, bottom: Insets.md),
+      child: Row(
+        children: [
+          Text(title, style: text.titleSmall),
+          const SizedBox(width: Insets.sm),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: Insets.sm, vertical: 1),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: Radii.all(Radii.sm),
+            ),
+            child: Text(
+              '$count',
+              style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Filters extends StatelessWidget {
@@ -134,45 +187,62 @@ class _Filters extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: Insets.sm),
         SegmentedButton<bool>(
           segments: [
-            ButtonSegment(value: false, label: Text('${l.pending} ($openCount)')),
-            ButtonSegment(value: true, label: Text('${l.completed} ($doneCount)')),
+            ButtonSegment(
+              value: false,
+              label: Text(
+                '${l.pending} ($openCount)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ButtonSegment(
+              value: true,
+              label: Text(
+                '${l.completed} ($doneCount)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
           selected: {showDone},
+          showSelectedIcon: false,
           onSelectionChanged: (s) => onShowDone(s.first),
         ),
         if (subjects.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: Insets.md),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                ChoiceChip(
-                  label: Text(l.all),
+                FilterPill(
+                  label: l.all,
                   selected: subjectFilter == null,
-                  onSelected: (_) => onSubject(null),
+                  onTap: () => onSubject(null),
                 ),
                 for (final s in subjects) ...[
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: Text(s.name),
+                  const SizedBox(width: Insets.sm),
+                  FilterPill(
+                    label: s.name,
+                    dot: s.color,
                     selected: subjectFilter == s.id,
-                    selectedColor: s.color.withValues(alpha: 0.2),
-                    onSelected: (_) => onSubject(subjectFilter == s.id ? null : s.id),
+                    onTap: () =>
+                        onSubject(subjectFilter == s.id ? null : s.id),
                   ),
                 ],
               ],
             ),
           ),
         ],
-        const SizedBox(height: 4),
       ],
     );
   }
 }
 
+/// صف المهمة — مربع اختيار، عنوان، وسطر بيانات صغير.
+/// A task row: a checkbox, a title, and one small line of metadata.
 class TaskTile extends ConsumerWidget {
   const TaskTile({super.key, required this.task});
 
@@ -181,74 +251,89 @@ class TaskTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
     final subject = ref.watch(subjectMapProvider)[task.subjectId];
+    final overdue = task.isOverdue && !task.isDone;
+    final hasMeta = subject != null ||
+        task.dueDate != null ||
+        task.priority == TaskPriority.high;
 
-    return Card(
-      child: InkWell(
-        onTap: () => openTaskEditor(context, ref, task),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(6, 6, 12, 6),
-          child: Row(
-            children: [
-              Checkbox(
-                value: task.isDone,
-                onChanged: (v) async {
-                  await ref.read(repositoryProvider).setTaskDone(task, v ?? false);
-                  ref.invalidate(tasksProvider);
-                  ref.invalidate(sessionsProvider);
-                },
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            decoration: task.isDone ? TextDecoration.lineThrough : null,
-                            color: task.isDone ? scheme.onSurfaceVariant : null,
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                    const SizedBox(height: 6),
+    return AppCard(
+      padding: Insets.sm,
+      onTap: () => openTaskEditor(context, ref, task),
+      // المتأخر بياخد حد أحمر خفيف بدل خلفية ملونة: التمييز يبان من غير ما
+      // الصف يصرخ في وش المستخدم كل مرة يفتح الصفحة.
+      // Overdue rows take a soft red border rather than a coloured fill: the
+      // distinction shows without the row shouting on every visit.
+      border: overdue ? scheme.error.withValues(alpha: 0.45) : null,
+      child: Row(
+        children: [
+          Checkbox(
+            value: task.isDone,
+            onChanged: (v) async {
+              await ref.read(repositoryProvider).setTaskDone(task, v ?? false);
+              ref.invalidate(tasksProvider);
+              ref.invalidate(sessionsProvider);
+            },
+          ),
+          const SizedBox(width: Insets.xs),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: Insets.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          decoration:
+                              task.isDone ? TextDecoration.lineThrough : null,
+                          color: task.isDone ? scheme.onSurfaceVariant : null,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  if (hasMeta) ...[
+                    const SizedBox(height: Insets.sm),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
+                      spacing: Insets.md,
+                      runSpacing: Insets.sm,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        if (subject != null) SubjectChip(subject: subject, dense: true),
+                        if (subject != null)
+                          SubjectChip(subject: subject, dense: true),
                         if (task.dueDate != null)
                           _MetaText(
                             icon: Icons.event_rounded,
                             text: Fmt.date(context, task.dueDate!),
-                            color: task.isOverdue ? scheme.error : scheme.onSurfaceVariant,
+                            color: overdue
+                                ? scheme.error
+                                : scheme.onSurfaceVariant,
                           ),
                         if (task.priority == TaskPriority.high)
                           _MetaText(
                             icon: Icons.flag_rounded,
                             text: context.l.priorityHigh,
-                            color: scheme.error,
+                            color: palette.warm,
                           ),
                       ],
                     ),
                   ],
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: context.l.delete,
-                iconSize: 20,
-                onPressed: () async {
-                  if (!await confirmDelete(context)) return;
-                  await ref.read(repositoryProvider).deleteTask(task.id);
-                  ref.invalidate(tasksProvider);
-                },
-                icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: Insets.sm),
+          IconButton(
+            tooltip: context.l.delete,
+            iconSize: 19,
+            onPressed: () async {
+              if (!await confirmDelete(context)) return;
+              await ref.read(repositoryProvider).deleteTask(task.id);
+              ref.invalidate(tasksProvider);
+            },
+            icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }

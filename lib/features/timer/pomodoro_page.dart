@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/format.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
@@ -23,11 +24,17 @@ class PomodoroPage extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final subjects = ref.watch(subjectsProvider).value ?? const <Subject>[];
     final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
+    final compact = Breakpoints.isCompact(context);
 
+    // لكل مرحلة لونها: التركيز بلون الهوية، والراحة بألوان أهدى — عشان تعرف
+    // انت في إيه من نظرة واحدة على الشاشة من بعيد.
+    // Each phase carries its own colour: focus in the identity green, breaks in
+    // quieter tones, so a glance from across the desk tells you where you are.
     final phaseColor = switch (state.phase) {
       PomodoroPhase.focus => scheme.primary,
-      PomodoroPhase.shortBreak => const Color(0xFF10B981),
-      PomodoroPhase.longBreak => const Color(0xFF0EA5E9),
+      PomodoroPhase.shortBreak => palette.success,
+      PomodoroPhase.longBreak => palette.warm,
     };
     final phaseLabel = switch (state.phase) {
       PomodoroPhase.focus => l.focus,
@@ -35,84 +42,92 @@ class PomodoroPage extends ConsumerWidget {
       PomodoroPhase.longBreak => l.longBreak,
     };
 
+    final dial = SizedBox(
+      width: compact ? 248 : 288,
+      height: compact ? 248 : 288,
+      child: CustomPaint(
+        painter: _RingPainter(
+          progress: state.progress,
+          color: phaseColor,
+          trackColor: scheme.outlineVariant,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                Fmt.clock(state.remainingSeconds),
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      height: 1.1,
+                    ),
+              ),
+              const SizedBox(height: Insets.sm),
+              Text(
+                '${l.round} ${state.completedRounds + 1}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
     return PageBody(
-      maxWidth: 520,
+      maxWidth: 640,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
+          const SizedBox(height: Insets.lg),
           Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: Insets.lg, vertical: Insets.sm),
               decoration: BoxDecoration(
-                color: phaseColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
+                color: phaseColor.withValues(alpha: 0.13),
+                borderRadius: Radii.all(Radii.xl),
               ),
               child: Text(
                 phaseLabel,
-                style: TextStyle(color: phaseColor, fontWeight: FontWeight.w700),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(color: phaseColor),
               ),
             ),
           ),
-          const SizedBox(height: 28),
-          Center(
-            child: SizedBox(
-              width: 260,
-              height: 260,
-              child: CustomPaint(
-                painter: _RingPainter(
-                  progress: state.progress,
-                  color: phaseColor,
-                  trackColor: scheme.outlineVariant.withValues(alpha: 0.4),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        Fmt.clock(state.remainingSeconds),
-                        style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontFeatures: const [FontFeature.tabularFigures()],
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${l.round} ${state.completedRounds + 1}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
+          const SizedBox(height: Insets.section),
+          Center(child: dial),
+          const SizedBox(height: Insets.section),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton.outlined(
                 tooltip: l.reset,
-                iconSize: 22,
-                onPressed: () => controller.reset(),
-                icon: const Icon(Icons.refresh_rounded),
+                onPressed: controller.reset,
+                icon: const Icon(Icons.refresh_rounded, size: 21),
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: Insets.xl),
               SizedBox(
-                width: 150,
+                width: 168,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
                     backgroundColor: phaseColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    foregroundColor: scheme.surface,
+                    minimumSize: const Size(0, 58),
                   ),
-                  onPressed: () => state.isRunning ? controller.pause() : controller.start(),
-                  icon: Icon(state.isRunning
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded),
+                  onPressed: () =>
+                      state.isRunning ? controller.pause() : controller.start(),
+                  icon: Icon(
+                    state.isRunning
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 22,
+                  ),
                   label: Text(
                     state.isRunning
                         ? l.pause
@@ -120,37 +135,38 @@ class PomodoroPage extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: Insets.xl),
               IconButton.outlined(
                 tooltip: l.skip,
-                iconSize: 22,
-                onPressed: () => controller.skip(),
-                icon: const Icon(Icons.skip_next_rounded),
+                onPressed: controller.skip,
+                icon: const Icon(Icons.skip_next_rounded, size: 21),
               ),
             ],
           ),
-          const SizedBox(height: 32),
-          if (state.isFocus)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: SubjectDropdown(
-                  subjects: subjects,
-                  value: state.subjectId,
-                  onChanged: controller.setSubject,
-                ),
-              ),
+
+          if (state.isFocus) ...[
+            const SizedBox(height: Insets.section),
+            SubjectDropdown(
+              subjects: subjects,
+              value: state.subjectId,
+              onChanged: controller.setSubject,
             ),
+          ],
+
           SectionHeader(
             l.today,
             action: TextButton.icon(
-              onPressed: () => _openTimerSettings(context, ref),
-              icon: const Icon(Icons.tune_rounded, size: 18),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const TimerSettingsSheet(),
+              ),
+              icon: const Icon(Icons.tune_rounded, size: 17),
               label: Text(l.settings),
             ),
           ),
           const _TodaySummary(),
-          const SizedBox(height: 8),
+          const SizedBox(height: Insets.lg),
           Text(
             l.isAr
                 ? 'كل ${settings.focusMinutes} دقيقة تركيز بتتسجل تلقائي في إحصائياتك.'
@@ -165,15 +181,6 @@ class PomodoroPage extends ConsumerWidget {
       ),
     );
   }
-
-  void _openTimerSettings(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => const TimerSettingsSheet(),
-    );
-  }
 }
 
 class _TodaySummary extends ConsumerWidget {
@@ -183,23 +190,18 @@ class _TodaySummary extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l;
     final stats = ref.watch(statsProvider);
-    return Row(
+    return StatGrid(
       children: [
-        Expanded(
-          child: StatTile(
-            label: l.todayFocus,
-            value: Fmt.minutes(context, stats.todayMinutes),
-            icon: Icons.timer_rounded,
-          ),
+        StatTile(
+          label: l.todayFocus,
+          value: Fmt.minutes(context, stats.todayMinutes),
+          icon: Icons.timelapse_rounded,
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: StatTile(
-            label: l.currentStreak,
-            value: '${stats.streakDays}',
-            icon: Icons.local_fire_department_rounded,
-            color: const Color(0xFFF59E0B),
-          ),
+        StatTile(
+          label: l.currentStreak,
+          value: '${stats.streakDays}',
+          icon: Icons.local_fire_department_rounded,
+          color: AppPalette.of(context).warm,
         ),
       ],
     );
@@ -218,7 +220,7 @@ class TimerSettingsSheet extends ConsumerWidget {
     final notifier = ref.read(settingsProvider.notifier);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+      padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.section),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/format.dart';
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
@@ -18,6 +19,14 @@ class FlashcardsPage extends ConsumerStatefulWidget {
 class _FlashcardsPageState extends ConsumerState<FlashcardsPage> {
   String? _subjectFilter;
 
+  Future<void> _review(List<Flashcard> due) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => ReviewPage(queue: due)),
+    );
+    ref.invalidate(cardsProvider);
+    ref.invalidate(weeklyReviewsProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -32,16 +41,18 @@ class _FlashcardsPageState extends ConsumerState<FlashcardsPage> {
         label: Text(l.addCard),
       ),
       body: cardsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorView(error: e, onRetry: () => ref.invalidate(cardsProvider)),
+        loading: () => const LoadingView(),
+        error: (e, _) =>
+            ErrorView(error: e, onRetry: () => ref.invalidate(cardsProvider)),
         data: (all) {
           if (all.isEmpty) {
             return EmptyState(
               icon: Icons.style_outlined,
-              message: l.noCardsYet,
+              title: l.noCardsYet,
+              message: l.cardsEmptyHint,
               action: FilledButton.icon(
                 onPressed: () => openCardEditor(context, ref, null),
-                icon: const Icon(Icons.add_rounded),
+                icon: const Icon(Icons.add_rounded, size: 19),
                 label: Text(l.addCard),
               ),
             );
@@ -56,71 +67,52 @@ class _FlashcardsPageState extends ConsumerState<FlashcardsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 8),
-                Row(
+                const SizedBox(height: Insets.sm),
+                _ReviewCard(due: due, onStart: () => _review(due)),
+                const SizedBox(height: Insets.lg),
+                StatGrid(
                   children: [
-                    Expanded(
-                      child: StatTile(
-                        label: l.totalCards,
-                        value: '${filtered.length}',
-                        icon: Icons.style_rounded,
-                      ),
+                    StatTile(
+                      label: l.totalCards,
+                      value: '${filtered.length}',
+                      icon: Icons.style_rounded,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: StatTile(
-                        label: l.dueNow,
-                        value: '${due.length}',
-                        icon: Icons.notifications_active_rounded,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                    StatTile(
+                      label: l.dueNow,
+                      value: '${due.length}',
+                      icon: Icons.notifications_active_rounded,
+                      color: due.isEmpty
+                          ? null
+                          : Theme.of(context).colorScheme.error,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: StatTile(
-                        label: l.newCards,
-                        value: '${filtered.where((c) => c.isNew).length}',
-                        icon: Icons.fiber_new_rounded,
-                        color: Theme.of(context).colorScheme.tertiary,
-                      ),
+                    StatTile(
+                      label: l.newCards,
+                      value: '${filtered.where((c) => c.isNew).length}',
+                      icon: Icons.fiber_new_rounded,
+                      color: AppPalette.of(context).warm,
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: due.isEmpty
-                      ? null
-                      : () async {
-                          await Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                              builder: (_) => ReviewPage(queue: due),
-                            ),
-                          );
-                          ref.invalidate(cardsProvider);
-                          ref.invalidate(weeklyReviewsProvider);
-                        },
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text(due.isEmpty ? l.nothingDueNow : '${l.startReview} (${due.length})'),
-                ),
                 if (subjects.isNotEmpty) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Insets.lg),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        ChoiceChip(
-                          label: Text(l.all),
+                        FilterPill(
+                          label: l.all,
                           selected: _subjectFilter == null,
-                          onSelected: (_) => setState(() => _subjectFilter = null),
+                          onTap: () => setState(() => _subjectFilter = null),
                         ),
                         for (final s in subjects) ...[
-                          const SizedBox(width: 8),
-                          ChoiceChip(
-                            label: Text(s.name),
+                          const SizedBox(width: Insets.sm),
+                          FilterPill(
+                            label: s.name,
+                            dot: s.color,
                             selected: _subjectFilter == s.id,
-                            selectedColor: s.color.withValues(alpha: 0.2),
-                            onSelected: (_) => setState(
-                              () => _subjectFilter = _subjectFilter == s.id ? null : s.id,
+                            onTap: () => setState(
+                              () => _subjectFilter =
+                                  _subjectFilter == s.id ? null : s.id,
                             ),
                           ),
                         ],
@@ -128,11 +120,17 @@ class _FlashcardsPageState extends ConsumerState<FlashcardsPage> {
                     ),
                   ),
                 ],
-                SectionHeader(l.flashcards),
-                for (final c in filtered)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _CardTile(card: c),
+                SectionHeader(l.allCards, subtitle: l.cardsListHint),
+                if (filtered.isEmpty)
+                  EmptyState(
+                    icon: Icons.filter_alt_off_rounded,
+                    message: l.noResults,
+                  )
+                else
+                  CardGrid(
+                    children: [
+                      for (final c in filtered) _CardTile(card: c),
+                    ],
                   ),
               ],
             ),
@@ -143,6 +141,97 @@ class _FlashcardsPageState extends ConsumerState<FlashcardsPage> {
   }
 }
 
+/// دعوة المراجعة — الإجراء الأساسي للصفحة، وله بطاقة مش زرار سايب.
+/// The review call to action: the page's primary action, given a card of its
+/// own rather than a button floating on the background.
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({required this.due, required this.onStart});
+
+  final List<Flashcard> due;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
+    final text = Theme.of(context).textTheme;
+    final ready = due.isNotEmpty;
+
+    final info = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(Insets.md),
+          decoration: BoxDecoration(
+            color: ready
+                ? scheme.primaryContainer
+                : scheme.surfaceContainerHighest,
+            borderRadius: Radii.all(Radii.md),
+          ),
+          child: Icon(
+            ready ? Icons.bolt_rounded : Icons.check_rounded,
+            size: 21,
+            color: ready ? scheme.onPrimaryContainer : palette.success,
+          ),
+        ),
+        const SizedBox(width: Insets.lg),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                ready ? l.cardsWaiting(due.length) : l.allCaughtUp,
+                style: text.titleSmall,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                ready ? l.reviewCardHint : l.nothingDueNow,
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final button = FilledButton.icon(
+      onPressed: ready ? onStart : null,
+      icon: const Icon(Icons.play_arrow_rounded, size: 20),
+      label: Text(l.startReview),
+    );
+
+    return AppCard(
+      // على الموبايل الزرار بيتحت النص بعرض البطاقة، وعلى الشاشة الواسعة جنبه.
+      // On a phone the button sits under the text at full width; on a wide
+      // screen it sits beside it.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 460) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                info,
+                const SizedBox(height: Insets.lg),
+                button,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: info),
+              const SizedBox(width: Insets.lg),
+              button,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// بطاقة الكارت في القايمة — السؤال بارز والإجابة سطر خافت تحته.
+/// A card in the list: the question leads, the answer sits under it, quieter.
 class _CardTile extends ConsumerWidget {
   const _CardTile({required this.card});
 
@@ -152,56 +241,49 @@ class _CardTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final subject = ref.watch(subjectMapProvider)[card.subjectId];
 
-    return Card(
-      child: InkWell(
-        onTap: () => openCardEditor(context, ref, card),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return AppCard(
+      padding: Insets.lg,
+      onTap: () => openCardEditor(context, ref, card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            card.front,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: Insets.xs),
+          Text(
+            card.back,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: Insets.md),
+          Row(
             children: [
+              if (subject != null) ...[
+                Flexible(child: SubjectChip(subject: subject, dense: true)),
+                const SizedBox(width: Insets.sm),
+              ],
+              const Spacer(),
+              Icon(Icons.schedule_rounded,
+                  size: 13,
+                  color: card.isDue ? scheme.error : scheme.onSurfaceVariant),
+              const SizedBox(width: Insets.xs),
               Text(
-                card.front,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                card.back,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  if (subject != null) ...[
-                    SubjectChip(subject: subject, dense: true),
-                    const SizedBox(width: 8),
-                  ],
-                  Icon(Icons.schedule_rounded, size: 13, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Text(
-                    card.isNew ? l.newCards : Fmt.inDays(context, card.dueAt),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: card.isDue ? scheme.error : scheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
+                card.isNew ? l.newCards : Fmt.inDays(context, card.dueAt),
+                style: text.labelSmall?.copyWith(
+                  color: card.isDue ? scheme.error : scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -291,10 +373,10 @@ class _CardEditorState extends ConsumerState<_CardEditor> {
 
     return Padding(
       padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 4,
-        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+        left: Insets.xl,
+        right: Insets.xl,
+        top: Insets.xs,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + Insets.xxl,
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -327,7 +409,7 @@ class _CardEditorState extends ConsumerState<_CardEditor> {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Insets.lg),
             TextField(
               controller: _front,
               autofocus: true,
@@ -338,7 +420,7 @@ class _CardEditorState extends ConsumerState<_CardEditor> {
                 alignLabelWithHint: true,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             TextField(
               controller: _back,
               minLines: 2,
@@ -348,20 +430,20 @@ class _CardEditorState extends ConsumerState<_CardEditor> {
                 alignLabelWithHint: true,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             SubjectDropdown(
               subjects: subjects,
               value: _subjectId,
               onChanged: (v) => setState(() => _subjectId = v),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: Insets.xxl),
             FilledButton(onPressed: _busy ? null : () => _save(), child: Text(l.save)),
             if (existing == null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: Insets.sm),
               OutlinedButton.icon(
                 onPressed: _busy ? null : () => _save(addAnother: true),
                 icon: const Icon(Icons.add_rounded),
-                label: Text(l.isAr ? 'حفظ وإضافة تاني' : 'Save and add another'),
+                label: Text(l.saveAndAddAnother),
               ),
             ],
           ],

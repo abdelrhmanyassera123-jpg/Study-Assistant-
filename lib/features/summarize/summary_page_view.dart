@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/math_text.dart';
+import '../../widgets/math_spans.dart';
 import 'style_profile.dart';
 
 /// بيرسم التلخيص كصفحة بألوان المستخدم وتخطيطه.
@@ -56,8 +58,8 @@ class SummaryPageView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (page.title.trim().isNotEmpty) ...[
-              Text(
-                page.title,
+              MathText(
+                readableMath(page.title),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
@@ -100,8 +102,8 @@ class _Block extends StatelessWidget {
             Container(width: 5, height: 22, color: color),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                block.text,
+              child: MathText(
+                readableMath(block.text),
                 style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w800,
@@ -139,7 +141,7 @@ class _Block extends StatelessWidget {
                 ),
               Padding(
                 padding: const EdgeInsets.all(14),
-                child: Text(block.text, style: body),
+                child: MathText(readableMath(block.text), style: body),
               ),
             ],
           ),
@@ -162,7 +164,8 @@ class _Block extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(item, style: body)),
+                    Expanded(
+                        child: MathText(readableMath(item), style: body)),
                   ],
                 ),
               ),
@@ -195,7 +198,9 @@ class _Block extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(block.items[i], style: body)),
+                    Expanded(
+                        child:
+                            MathText(readableMath(block.items[i]), style: body)),
                   ],
                 ),
               ),
@@ -211,13 +216,13 @@ class _Block extends StatelessWidget {
               start: BorderSide(color: color, width: 4),
             ),
           ),
-          child: Text(
-            block.text,
+          child: MathText(
+            readableMath(block.text),
             style: body.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
-      BlockType.note => Text(
-          block.text,
+      BlockType.note => MathText(
+          readableMath(block.text),
           style: body.copyWith(
             fontSize: 14,
             color: onPaper.withValues(alpha: 0.75),

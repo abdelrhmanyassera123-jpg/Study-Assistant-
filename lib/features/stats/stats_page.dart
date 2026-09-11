@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/format.dart';
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
@@ -15,12 +16,13 @@ class StatsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
     final stats = ref.watch(statsProvider);
     final sessionsAsync = ref.watch(sessionsProvider);
     final reviews = ref.watch(weeklyReviewsProvider).value ?? 0;
 
     if (sessionsAsync.isLoading && sessionsAsync.value == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const LoadingView();
     }
     if (sessionsAsync.hasError && sessionsAsync.value == null) {
       return ErrorView(
@@ -36,77 +38,49 @@ class StatsPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 8),
-          Row(
+          const SizedBox(height: Insets.sm),
+          StatGrid(
             children: [
-              Expanded(
-                child: StatTile(
-                  label: l.thisWeek,
-                  value: Fmt.minutes(context, stats.weekMinutes),
-                  icon: Icons.calendar_view_week_rounded,
-                ),
+              StatTile(
+                label: l.thisWeek,
+                value: Fmt.minutes(context, stats.weekMinutes),
+                icon: Icons.calendar_view_week_rounded,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: StatTile(
-                  label: l.currentStreak,
-                  value: '${stats.streakDays}',
-                  icon: Icons.local_fire_department_rounded,
-                  color: const Color(0xFFF59E0B),
-                ),
+              StatTile(
+                label: l.currentStreak,
+                value: '${stats.streakDays}',
+                icon: Icons.local_fire_department_rounded,
+                color: AppPalette.of(context).warm,
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: StatTile(
-                  label: l.dailyAverage,
-                  value: Fmt.minutes(context, stats.dailyAverageMinutes.round()),
-                  icon: Icons.show_chart_rounded,
-                  color: const Color(0xFF10B981),
-                ),
+              StatTile(
+                label: l.dailyAverage,
+                value: Fmt.minutes(context, stats.dailyAverageMinutes.round()),
+                icon: Icons.show_chart_rounded,
+                color: AppPalette.of(context).success,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: StatTile(
-                  label: l.sessionsCount,
-                  value: '${stats.sessionCount}',
-                  icon: Icons.timer_rounded,
-                  color: const Color(0xFF0EA5E9),
-                ),
+              StatTile(
+                label: l.sessionsCount,
+                value: '${stats.sessionCount}',
+                icon: Icons.timelapse_rounded,
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: StatTile(
-                  label: l.cardsReviewed,
-                  value: '$reviews',
-                  icon: Icons.style_rounded,
-                  color: const Color(0xFF8B5CF6),
-                ),
+              StatTile(
+                label: l.cardsReviewed,
+                value: '$reviews',
+                icon: Icons.style_rounded,
+                color: scheme.tertiary,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: StatTile(
-                  label: l.tasksCompleted,
-                  value: '${stats.tasksCompletedThisWeek}',
-                  icon: Icons.task_alt_rounded,
-                  color: const Color(0xFFEC4899),
-                ),
+              StatTile(
+                label: l.tasksCompleted,
+                value: '${stats.tasksCompletedThisWeek}',
+                icon: Icons.task_alt_rounded,
+                color: scheme.secondary,
               ),
             ],
           ),
           SectionHeader(l.last7Days),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 24, 20, 12),
-              child: SizedBox(height: 200, child: _WeekChart(stats: stats)),
-            ),
+          AppCard(
+            padding: Insets.lg,
+            child: SizedBox(height: 210, child: _WeekChart(stats: stats)),
           ),
           SectionHeader(l.bySubject),
           _SubjectBreakdown(stats: stats),
@@ -230,14 +204,16 @@ class _SubjectBreakdown extends ConsumerWidget {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     if (entries.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: Text(
-              l.notEnoughData,
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
+      return AppCard(
+        padding: Insets.xxl,
+        child: Center(
+          child: Text(
+            l.notEnoughData,
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
       );
@@ -245,21 +221,18 @@ class _SubjectBreakdown extends ConsumerWidget {
 
     final total = entries.fold<int>(0, (sum, e) => sum + e.value);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            for (final e in entries) ...[
-              _SubjectRow(
-                subject: subjects[e.key],
-                minutes: e.value,
-                fraction: total == 0 ? 0 : e.value / total,
-              ),
-              if (e != entries.last) const SizedBox(height: 14),
-            ],
+    return AppCard(
+      child: Column(
+        children: [
+          for (final e in entries) ...[
+            _SubjectRow(
+              subject: subjects[e.key],
+              minutes: e.value,
+              fraction: total == 0 ? 0 : e.value / total,
+            ),
+            if (e != entries.last) const SizedBox(height: Insets.lg),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -304,9 +277,9 @@ class _SubjectRow extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: Insets.sm),
         ClipRRect(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: Radii.all(Insets.sm),
           child: LinearProgressIndicator(
             value: fraction,
             minHeight: 8,

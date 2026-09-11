@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../../widgets/study_text.dart';
 
 /// جلسة مراجعة: كارت ورا التاني لحد ما الطابور يخلص.
 /// A review session: one card at a time until the queue is empty.
@@ -65,13 +67,15 @@ class _ReviewPageState extends ConsumerState<ReviewPage> {
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
 
     if (_queue.isEmpty) {
       return Scaffold(
         appBar: AppBar(),
         body: EmptyState(
           icon: Icons.celebration_rounded,
-          message: '${l.reviewFinished}\n$_reviewed ${l.cardsReviewed}',
+          title: l.reviewFinished,
+          message: '$_reviewed ${l.cardsReviewed}',
           action: FilledButton(
             onPressed: () => Navigator.pop(context),
             child: Text(l.close),
@@ -89,7 +93,8 @@ class _ReviewPageState extends ConsumerState<ReviewPage> {
         title: Text('$_reviewed / $_startCount'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
-          child: LinearProgressIndicator(value: progress.clamp(0, 1), minHeight: 3),
+          child: LinearProgressIndicator(
+              value: progress.clamp(0, 1), minHeight: 3),
         ),
       ),
       body: PageBody(
@@ -97,48 +102,57 @@ class _ReviewPageState extends ConsumerState<ReviewPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 12),
+            const SizedBox(height: Insets.md),
             if (subject != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: SubjectChip(subject: subject),
               ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                child: Column(
-                  children: [
-                    Text(
-                      card.front,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            height: 1.4,
+            const SizedBox(height: Insets.lg),
+            AppCard(
+              padding: Insets.section,
+              child: Column(
+                children: [
+                  StudyText(
+                    card.front,
+                    style: text.headlineSmall,
+                    selectable: false,
+                  ),
+                  // الإجابة بتظهر بحركة قصيرة: الكشف لحظة في المراجعة، والانتقال
+                  // المفاجئ بيخلي العين تدوّر على اللي اتغيّر.
+                  // The answer fades in: revealing is the moment in a review, and
+                  // an instant swap leaves the eye hunting for what changed.
+                  AnimatedCrossFade(
+                    duration: Motion.normal,
+                    sizeCurve: Motion.ease,
+                    crossFadeState: _revealed
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    firstChild: const SizedBox(width: double.infinity),
+                    secondChild: Column(
+                      children: [
+                        const SizedBox(height: Insets.xxl),
+                        Divider(color: scheme.outlineVariant),
+                        const SizedBox(height: Insets.xxl),
+                        StudyText(
+                          card.back,
+                          style: text.titleMedium?.copyWith(
+                            color: scheme.primary,
                           ),
+                          selectable: false,
+                        ),
+                      ],
                     ),
-                    if (_revealed) ...[
-                      const SizedBox(height: 24),
-                      Divider(color: scheme.outlineVariant),
-                      const SizedBox(height: 24),
-                      Text(
-                        card.back,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: scheme.primary,
-                              height: 1.6,
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: Insets.xxl),
             if (!_revealed)
-              FilledButton(
+              FilledButton.icon(
                 onPressed: () => setState(() => _revealed = true),
-                child: Text(l.showAnswer),
+                icon: const Icon(Icons.visibility_rounded, size: 19),
+                label: Text(l.showAnswer),
               )
             else
               _GradeButtons(onGrade: _busy ? null : _grade),
@@ -149,6 +163,13 @@ class _ReviewPageState extends ConsumerState<ReviewPage> {
   }
 }
 
+/// أزرار التقدير — أربعة في صف على الشاشة الواسعة، و2×2 على الموبايل.
+/// The grading buttons: four across on a wide screen, 2×2 on a phone.
+///
+/// أربعة أزرار في صف واحد على 375 بكسل بتضغط النص لحد ما يتقص، والعربي بيتقص
+/// أسرع. التقسيم بيخلي كل زرار مساحته كافية.
+/// Four buttons in one row at 375px squeeze the labels until they clip, and
+/// Arabic clips sooner. Splitting the row gives each button room.
 class _GradeButtons extends StatelessWidget {
   const _GradeButtons({required this.onGrade});
 
@@ -158,36 +179,56 @@ class _GradeButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
+    final palette = AppPalette.of(context);
 
-    final buttons = <(ReviewGrade, String, Color)>[
-      (ReviewGrade.again, l.againLabel, scheme.error),
-      (ReviewGrade.hard, l.hardLabel, const Color(0xFFF59E0B)),
-      (ReviewGrade.good, l.goodLabel, const Color(0xFF10B981)),
-      (ReviewGrade.easy, l.easyLabel, const Color(0xFF0EA5E9)),
+    // التدرّج من "تاني" لـ"سهل" بيمشي من الأحمر للأخضر الفاتح: الشدة بتقل مع
+    // كل درجة، والألوان من التصميم مش أرقام مكتوبة هنا.
+    // The ramp from "again" to "easy" runs red to pale green: the weight drops
+    // with each grade, and the colours come from the design, not from hex
+    // literals written here.
+    final grades = <(ReviewGrade, String, Color, Color)>[
+      (ReviewGrade.again, l.againLabel, scheme.error, scheme.onError),
+      (ReviewGrade.hard, l.hardLabel, palette.warm, palette.onWarm),
+      (ReviewGrade.good, l.goodLabel, scheme.primary, scheme.onPrimary),
+      (
+        ReviewGrade.easy,
+        l.easyLabel,
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer
+      ),
     ];
 
-    return Row(
-      children: [
-        for (final (grade, label, color) in buttons) ...[
-          Expanded(
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: color,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 420 ? 4 : 2;
+        final width =
+            (constraints.maxWidth - Insets.sm * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: Insets.sm,
+          runSpacing: Insets.sm,
+          children: [
+            for (final (grade, label, bg, fg) in grades)
+              SizedBox(
+                width: width,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: bg,
+                    foregroundColor: fg,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: Insets.lg, horizontal: Insets.xs),
+                  ),
+                  onPressed: onGrade == null ? null : () => onGrade!(grade),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
-              onPressed: onGrade == null ? null : () => onGrade!(grade),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-          if (grade != ReviewGrade.easy) const SizedBox(width: 8),
-        ],
-      ],
+          ],
+        );
+      },
     );
   }
 }

@@ -19,6 +19,7 @@ class AppSettings {
     this.geminiModel = '',
     this.autoModel = true,
     this.uiScale = 1.0,
+    this.remindersOn = false,
   });
 
   final String languageCode;
@@ -48,6 +49,13 @@ class AppSettings {
   /// before the browser sees it, so browser zoom does nothing inside the app.
   final double uiScale;
 
+  /// تنبيهات المحاضرات شغالة ولا لأ. بتبدأ مقفولة عن قصد: التنبيه اللي المستخدم
+  /// ما طلبهوش بيتقفل من إعدادات المتصفح وما يرجعش تاني.
+  /// Whether lecture reminders run. Off by default on purpose: a notification
+  /// nobody asked for gets blocked in the browser's settings and never comes
+  /// back.
+  final bool remindersOn;
+
   Locale get locale => Locale(languageCode);
 
   AppSettings copyWith({
@@ -61,6 +69,7 @@ class AppSettings {
     String? geminiModel,
     bool? autoModel,
     double? uiScale,
+    bool? remindersOn,
   }) {
     return AppSettings(
       languageCode: languageCode ?? this.languageCode,
@@ -73,6 +82,7 @@ class AppSettings {
       geminiModel: geminiModel ?? this.geminiModel,
       autoModel: autoModel ?? this.autoModel,
       uiScale: uiScale ?? this.uiScale,
+      remindersOn: remindersOn ?? this.remindersOn,
     );
   }
 }
@@ -96,6 +106,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _kGeminiModel = 'gemini_model';
   static const _kUiScale = 'ui_scale';
   static const _kAutoModel = 'auto_model';
+  static const _kReminders = 'reminders_on';
 
   SharedPreferences? _prefs;
 
@@ -116,7 +127,13 @@ class SettingsNotifier extends Notifier<AppSettings> {
       geminiModel: p.getString(_kGeminiModel) ?? '',
       autoModel: p.getBool(_kAutoModel) ?? true,
       uiScale: p.getDouble(_kUiScale) ?? 1.0,
+      remindersOn: p.getBool(_kReminders) ?? false,
     );
+  }
+
+  void setReminders(bool on) {
+    state = state.copyWith(remindersOn: on);
+    _prefs?.setBool(_kReminders, on);
   }
 
   void setUiScale(double scale) {

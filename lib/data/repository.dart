@@ -136,6 +136,38 @@ class Repository {
       });
 
   // -------------------------------------------------------- style samples
+  // ------------------------------------------------------- الجدول / schedule
+
+  Future<List<ScheduleEntry>> scheduleEntries() async {
+    final rows = await _db
+        .from('schedule_entries')
+        .select()
+        .order('weekday', ascending: true)
+        .order('start_minutes', ascending: true);
+    return rows.map<ScheduleEntry>(ScheduleEntry.fromMap).toList();
+  }
+
+  Future<void> addScheduleEntry(ScheduleEntry e) =>
+      _db.from('schedule_entries').insert(e.toInsert(_uid));
+
+  /// بيضيف مجموعة مرة واحدة — الجدول بييجي كله من الاستيراد.
+  /// Inserts a batch in one call: a timetable arrives whole from the import.
+  Future<void> addScheduleEntries(List<ScheduleEntry> entries) async {
+    if (entries.isEmpty) return;
+    await _db
+        .from('schedule_entries')
+        .insert([for (final e in entries) e.toInsert(_uid)]);
+  }
+
+  Future<void> updateScheduleEntry(ScheduleEntry e) =>
+      _db.from('schedule_entries').update(e.toUpdate()).eq('id', e.id);
+
+  Future<void> deleteScheduleEntry(String id) =>
+      _db.from('schedule_entries').delete().eq('id', id);
+
+  Future<void> clearSchedule() =>
+      _db.from('schedule_entries').delete().eq('user_id', _uid);
+
   Future<List<StyleSample>> styleSamples() async {
     final rows = await _db
         .from('style_samples')

@@ -38,6 +38,12 @@ final sessionsProvider =
 final weeklyReviewsProvider =
     FutureProvider<int>((ref) => ref.watch(repositoryProvider).reviewsThisWeek());
 
+/// جدول المحاضرات الأسبوعي.
+/// The weekly timetable.
+final scheduleProvider = FutureProvider<List<ScheduleEntry>>(
+  (ref) => ref.watch(repositoryProvider).scheduleEntries(),
+);
+
 /// بروفايلات الشكل حسب المادة.
 /// Look profiles by subject.
 final styleProfilesProvider = FutureProvider<Map<String?, Map<String, dynamic>>>(
@@ -93,4 +99,5 @@ void invalidateAll(WidgetRef ref) {
   ref.invalidate(weeklyReviewsProvider);
   ref.invalidate(styleSamplesProvider);
   ref.invalidate(styleProfilesProvider);
+  ref.invalidate(scheduleProvider);
 }

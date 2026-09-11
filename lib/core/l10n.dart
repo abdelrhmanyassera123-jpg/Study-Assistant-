@@ -24,6 +24,39 @@ class AppL10n {
         'Focus, review on time, see your progress',
       );
 
+  String get workspace => _('مساحة المذاكرة', 'YOUR WORKSPACE');
+  String get focusTitle => _('خطوة صغيرة النهاردة، فرق كبير بكرة.', 'Small steps today. A brighter tomorrow.');
+  String get focusSubtitle => _('رتّب أفكارك، اختار هدفك، وابدأ وقتك بتركيز.', 'Clear your mind, pick a goal, and make time to focus.');
+  String get personalSpace => _('كل أدواتك، في مكان واحد', 'A little space for big ideas');
+  String get more => _('المزيد', 'More');
+  String get summarizeLecture => _('لخّص محاضرة', 'Summarize a lecture');
+  String get reviewNow => _('راجع دلوقتي', 'Review now');
+  /// كام كارت مستنّي المراجعة — الصيغة بتتغير مع العدد في اللغتين.
+  /// How many cards are waiting; the wording changes with the count in both
+  /// languages.
+  String cardsWaiting(int n) {
+    if (!isAr) return n == 1 ? '1 card waiting' : '$n cards waiting';
+    if (n == 1) return 'كارت واحد مستنيك';
+    if (n == 2) return 'كارتين مستنيينك';
+    if (n <= 10) return '$n كروت مستنيينك';
+    return '$n كارت مستنيك';
+  }
+  String get onePlace => _('كله في مكان واحد', 'All in one place');
+  String get viewAll => _('عرض الكل', 'View all');
+  String get stepContent => _('المحتوى', 'Content');
+  String get stepContentHint => _(
+        'سجّل المحاضرة، أو ارفع ملفها، أو الزق نصها — وتقدر تجمّع أكتر من مصدر',
+        'Record the lecture, upload it, or paste its text — sources combine',
+      );
+  String get stepStyle => _('أسلوبك', 'Your style');
+  String get stepStyleHint => _(
+        'الأمثلة والتخطيط اللي التلخيص هيتبعهم',
+        'The examples and layout the summary will follow',
+      );
+  String get stepResult => _('النتيجة', 'Result');
+  String get stepResultHint =>
+      _('راجعها، احفظها، أو صدّرها', 'Review it, save it, or export it');
+
   // ------------------------------------------------------------ sections
   String get dashboard => _('الرئيسية', 'Home');
   String get timer => _('المؤقت', 'Timer');
@@ -102,6 +135,20 @@ class AppL10n {
   String get editSubject => _('تعديل المادة', 'Edit subject');
   String get subjectName => _('اسم المادة', 'Subject name');
   String get subjectColor => _('اللون', 'Color');
+  /// أسماء مختصرة للعدّادات: "1 مهام" أخف من "1 المهام".
+  /// Short names for counters: "1 tasks" reads better than "1 the tasks".
+  String get countTasks => _('مهام', 'tasks');
+  String get countCards => _('كروت', 'cards');
+  String get countNotes => _('ملاحظات', 'notes');
+
+  String get subjectsHint => _(
+        'المواد بتلمّ المهام والكروت والملاحظات في مكان واحد.',
+        'Subjects gather tasks, cards and notes in one place.',
+      );
+  String get subjectsEmptyHint => _(
+        'ابدأ بمادة واحدة — تقدر تضيف الباقي في أي وقت.',
+        'Start with one subject; you can add the rest whenever.',
+      );
   String get noSubjectsYet => _(
         'ابدأ بإضافة المواد اللي بتذاكرها',
         'Start by adding the subjects you study',
@@ -127,6 +174,14 @@ class AppL10n {
   String get overdue => _('متأخرة', 'Overdue');
   String get noTasksYet => _('مفيش مهام لسه', 'No tasks yet');
   String get noTasksDone => _('مفيش مهام خلصت', 'Nothing completed yet');
+  String get tasksEmptyHint => _(
+        'اكتب اللي عليك النهارده وخليه قدام عينك.',
+        'Write down what today needs and keep it in sight.',
+      );
+  String get doneHint => _(
+        'أول ما تخلّص مهمة هتلاقيها هنا.',
+        'Tasks you finish will collect here.',
+      );
 
   // ------------------------------------------------------------ flashcards
   String get addCard => _('إضافة كارت', 'Add card');
@@ -140,6 +195,21 @@ class AppL10n {
   String get goodLabel => _('كويس', 'Good');
   String get easyLabel => _('سهل', 'Easy');
   String get noCardsYet => _('مفيش كروت لسه', 'No cards yet');
+  String get cardsEmptyHint => _(
+        'اكتب السؤال والإجابة، والتطبيق هيرجّعهملك في الوقت المناسب.',
+        'Write a question and an answer; the app brings them back on time.',
+      );
+  String get allCards => _('كل الكروت', 'All cards');
+  String get cardsListHint => _(
+        'اضغط على أي كارت لتعديله.',
+        'Tap any card to edit it.',
+      );
+  String get reviewCardHint => _(
+        'مراجعة قصيرة دلوقتي أنفع من مذاكرة طويلة قبل الامتحان.',
+        'A short review now beats a long one the night before.',
+      );
+  String get saveAndAddAnother =>
+      _('حفظ وإضافة تاني', 'Save and add another');
   String get nothingDueNow => _(
         'مفيش كروت مستحقة دلوقتي — ارجع بعدين',
         'Nothing due right now — come back later',
@@ -176,6 +246,247 @@ class AppL10n {
   String get noNotesYet => _('مفيش ملاحظات لسه', 'No notes yet');
   String get searchNotes => _('دوّر في الملاحظات', 'Search notes');
   String get noResults => _('مفيش نتايج', 'No results');
+  String get notesEmptyHint => _(
+        'اكتب ملخّصك بنفسك، أو احفظ اللي بيطلع من التلخيص.',
+        'Write a summary yourself, or save one the summarizer produces.',
+      );
+  String get clear => _('مسح', 'Clear');
+
+  /// عدد الملاحظات الظاهرة — العربي بيفرّق بين المفرد والمثنى والجمع.
+  /// How many notes are showing; Arabic separates one, two and many.
+  String notesCount(int n) {
+    if (!isAr) return n == 1 ? '1 note' : '$n notes';
+    if (n == 1) return 'ملاحظة واحدة';
+    if (n == 2) return 'ملاحظتان';
+    if (n <= 10) return '$n ملاحظات';
+    return '$n ملاحظة';
+  }
+
+  // ------------------------------------------ أدوات الذكاء / study tools
+  String get studyAi => _('أدوات المذاكرة', 'Study tools');
+
+  // الكروت / cards
+  String get makeCards => _('اعمل كروت مراجعة', 'Make review cards');
+  String get makeCardsHint => _(
+        'الموديل بيطلّع الكروت من المحتوى ده بس. راجعها قبل ما تتحفظ.',
+        'The model builds cards from this material only. Check them before they are saved.',
+      );
+  String get makingCards => _('بيطلّع الكروت...', 'Making the cards...');
+
+  String saveCards(int n) {
+    if (!isAr) return n == 1 ? 'Save 1 card' : 'Save $n cards';
+    if (n == 1) return 'احفظ كارت واحد';
+    if (n == 2) return 'احفظ الكارتين';
+    if (n <= 10) return 'احفظ $n كروت';
+    return 'احفظ $n كارت';
+  }
+
+  String cardsSaved(int n) {
+    if (!isAr) return n == 1 ? '1 card saved' : '$n cards saved';
+    if (n == 1) return 'اتحفظ كارت واحد';
+    if (n == 2) return 'اتحفظوا كارتين';
+    if (n <= 10) return 'اتحفظوا $n كروت';
+    return 'اتحفظ $n كارت';
+  }
+
+  // اسأل / ask
+  String get askLecture => _('اسأل عن المحاضرة', 'Ask about the lecture');
+  String get askTitle => _(
+        'اسأل في المحاضرة دي',
+        'Ask about this lecture',
+      );
+  String get askHint => _('اكتب سؤالك...', 'Type your question...');
+  String get askGrounded => _(
+        'الإجابات من المحاضرة دي بس',
+        'Answers come from this lecture only',
+      );
+
+  /// أسئلة تبدأ بيها — الشاشة الفاضية أصعب حاجة في محادثة.
+  /// Openers to start from; an empty chat screen is the hardest part.
+  List<String> get askOpeners => isAr
+      ? const [
+          'اشرحلي أهم فكرة في المحاضرة دي',
+          'إيه اللي ممكن ييجي في الامتحان من هنا؟',
+          'اديني مثال على اللي اتشرح',
+          'إيه الفرق بين المفاهيم اللي اتذكرت؟',
+        ]
+      : const [
+          'Explain the main idea of this lecture',
+          'What could come up in an exam from this?',
+          'Give me an example of what was explained',
+          'What is the difference between the concepts mentioned?',
+        ];
+
+  // الامتحان / exam
+  String get mockExam => _('امتحان تجريبي', 'Mock exam');
+  String get makingExam => _('بيجهّز الأسئلة...', 'Writing the questions...');
+  String get markExam => _('صحّح إجاباتي', 'Mark my answers');
+  String get markingExam => _('بيصحح...', 'Marking...');
+  String get newExam => _('امتحان تاني', 'New exam');
+  String get yourAnswer => _('إجابتك', 'Your answer');
+  String get modelAnswer => _('الإجابة النموذجية', 'Model answer');
+  String get examResult => _('النتيجة', 'Result');
+  String get multipleChoice => _('اختيار من متعدد', 'Multiple choice');
+  String get written => _('مقالي', 'Written');
+  String get weakSpots => _('محتاج مراجعة', 'Needs review');
+
+  String markScore(double score) {
+    final percent = (score * 100).round();
+    return isAr ? 'الدرجة: $percent%' : 'Score: $percent%';
+  }
+
+  // الخطة / plan
+  String get weekPlan => _('خطة الأسبوع', 'This week\'s plan');
+  String get weekPlanHint => _(
+        'خطة مبنية على جدولك ومهامك والكروت المستحقة.',
+        'A plan built from your timetable, your tasks and the cards due.',
+      );
+  String get makingPlan => _('بيرتّب الأسبوع...', 'Laying out the week...');
+  String get addToTasks => _('ضيفها للمهام', 'Add to tasks');
+  String get addedToTasks => _('اتضافت للمهام', 'Added to your tasks');
+
+  String planTotal(String time) =>
+      isAr ? 'إجمالي الخطة: $time' : 'Plan total: $time';
+
+  // -------------------------------------------------- الجدول / timetable
+  String get schedule => _('الجدول', 'Timetable');
+  String get scheduleHint => _(
+        'محاضراتك الأسبوعية، ومعاها تنبيه قبل كل واحدة.',
+        'Your week of lectures, each with a reminder before it.',
+      );
+  String get addLecture => _('إضافة محاضرة', 'Add lecture');
+  String get editLecture => _('تعديل المحاضرة', 'Edit lecture');
+  String get lectureName => _('اسم المحاضرة', 'Lecture');
+  String get hall => _('القاعة', 'Room');
+  String get lecturer => _('الدكتور', 'Lecturer');
+  String get startTime => _('من', 'From');
+  String get endTime => _('لـ', 'To');
+  String get day => _('اليوم', 'Day');
+  String get noScheduleYet => _('مفيش جدول لسه', 'No timetable yet');
+  String get scheduleEmptyHint => _(
+        'الزق جدول الكلية أو ارفع صورته، والباقي عليّا.',
+        'Paste your college timetable or upload a photo of it; I will do the rest.',
+      );
+  String get noLecturesToday =>
+      _('مفيش محاضرات النهاردة', 'No lectures today');
+
+  // الاستيراد بالذكاء الاصطناعي / the AI import
+  String get importSchedule => _('استورد جدولك', 'Import timetable');
+  String get importScheduleHint => _(
+        'الزق الجدول زي ما هو أو ارفع صورته — التطبيق هيرتّبه.',
+        'Paste the timetable as it is or upload a photo; the app will lay it out.',
+      );
+  String get pasteSchedule => _(
+        'الزق الجدول هنا... (أي شكل: جدول الكلية، رسالة، صورة مكتوبة)',
+        'Paste the timetable here — any shape it came in',
+      );
+  String get orUploadPhoto => _('أو ارفع صورة الجدول', 'or upload a photo of it');
+  /// السؤال اللي بيتسأل لما الجدول يبقى فيه أكتر من قسم.
+  /// The question asked when a timetable holds more than one section.
+  String whichGroup(String label) {
+    final what = label.trim().isEmpty ? (isAr ? 'قسم' : 'section') : label.trim();
+    return isAr ? 'انت في أنهي $what؟' : 'Which $what are you in?';
+  }
+
+  String get whichGroupHint => _(
+        'الجدول ده فيه أكتر من قسم مدمجين. اختار بتاعك عشان نسيب الباقي.',
+        'This timetable merges more than one section. Pick yours and the rest is left out.',
+      );
+  String get allGroups => _('كلهم', 'All of them');
+
+  String groupPicked(int kept, int total) => isAr
+      ? 'هيتحفظ $kept من $total محاضرة'
+      : '$kept of $total lectures will be saved';
+
+  String get readSchedule => _('اقرا الجدول', 'Read it');
+  String get readingSchedule => _('بيقرا الجدول...', 'Reading the timetable...');
+  String get reviewBeforeSaving =>
+      _('راجعه قبل الحفظ', 'Check it before saving');
+  String get saveSchedule => _('احفظ الجدول', 'Save timetable');
+  String get replaceSchedule => _('امسح القديم وحط ده', 'Replace what is there');
+  String get addToSchedule => _('ضيفه للجدول', 'Add to the timetable');
+  String get clearSchedule => _('امسح الجدول كله', 'Clear the timetable');
+  String get scheduleCleared => _('الجدول اتمسح', 'Timetable cleared');
+
+  String clearScheduleWarning(int n) => isAr
+      ? 'هيتشال $n محاضرة، والتنبيهات بتاعتهم كمان.'
+      : '$n lectures will go, and their reminders with them.';
+
+  String get scheduleSaved => _('الجدول اتحفظ', 'Timetable saved');
+
+  String lecturesRead(int n) {
+    if (!isAr) return n == 1 ? '1 lecture read' : '$n lectures read';
+    if (n == 1) return 'محاضرة واحدة';
+    if (n == 2) return 'محاضرتين';
+    if (n <= 10) return '$n محاضرات';
+    return '$n محاضرة';
+  }
+
+  // التنبيهات / reminders
+  String get reminders => _('التنبيهات', 'Reminders');
+  String get remindersHint => _(
+        'تنبيه قبل كل محاضرة، وانت اللي بتحدد بكام.',
+        'A reminder before each lecture, as early as you choose.',
+      );
+  String get reminderOff => _('من غير تنبيه', 'No reminder');
+  String get enableReminders => _('فعّل التنبيهات', 'Turn reminders on');
+  String get allowNotifications =>
+      _('اسمح بالتنبيهات', 'Allow notifications');
+  String get remindersBlocked => _(
+        'المتصفح رافض التنبيهات للموقع ده.',
+        'The browser is blocking notifications for this site.',
+      );
+  String get remindersBlockedHint => _(
+        'افتح إعدادات الموقع في المتصفح واسمح بالتنبيهات.',
+        "Open the site's settings in your browser and allow notifications.",
+      );
+  String get remindersNeedOpenTab => _(
+        'التنبيه بيطلع والتطبيق مفتوح، حتى لو في تبويب ورا.',
+        'Reminders arrive while the app is open, even in a background tab.',
+      );
+
+  String remindBefore(int minutes) => isAr
+      ? 'قبلها بـ $minutes دقيقة'
+      : '$minutes min before';
+
+  /// نص التنبيه نفسه — بيتقرا وهو طالع من المتصفح.
+  /// The reminder's own text, read as it comes out of the browser.
+  String reminderBody(int minutes) {
+    if (minutes <= 0) return isAr ? 'بدأت دلوقتي' : 'Starting now';
+    if (!isAr) return 'In $minutes min';
+    if (minutes == 1) return 'بعد دقيقة';
+    if (minutes == 2) return 'بعد دقيقتين';
+    if (minutes <= 10) return 'بعد $minutes دقايق';
+    return 'بعد $minutes دقيقة';
+  }
+
+  /// "بعد ساعتين" مش "بعد 2 ساعة" — العربي بيغيّر الصيغة مع العدد.
+  /// "In two hours" rather than "in 2 hour": Arabic changes form with the
+  /// count.
+  String inHours(int n) {
+    if (!isAr) return n == 1 ? 'In an hour' : 'In $n h';
+    if (n == 1) return 'بعد ساعة';
+    if (n == 2) return 'بعد ساعتين';
+    if (n <= 10) return 'بعد $n ساعات';
+    return 'بعد $n ساعة';
+  }
+
+  String inDays(int n) {
+    if (!isAr) return n == 1 ? 'Tomorrow' : 'In $n days';
+    if (n == 1) return 'بكرة';
+    if (n == 2) return 'بعد يومين';
+    if (n <= 10) return 'بعد $n أيام';
+    return 'بعد $n يوم';
+  }
+
+  /// أسماء الأيام — 1 = الاتنين زي `DateTime.weekday`.
+  /// Day names; 1 = Monday, as in `DateTime.weekday`.
+  String weekdayName(int weekday) {
+    const ar = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    const en = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final index = (weekday - 1).clamp(0, 6);
+    return isAr ? ar[index] : en[index];
+  }
 
   // ----------------------------------------------------------------- stats
   String get last7Days => _('آخر 7 أيام', 'Last 7 days');
@@ -207,7 +518,23 @@ class AppL10n {
 
   // ------------------------------------------------------------- summarize
   String get summarize => _('التلخيص', 'Summarize');
+
+  /// اسم مختصر للشريط السفلي — "Summarize" بتتقسم لسطرين في خانة ضيقة.
+  /// A short name for the bottom bar; "Summarize" wraps in a narrow slot.
+  String get summarizeNav => _('التلخيص', 'Summary');
+
+  /// الفاصلة بتختلف بين اللغتين.
+  /// The comma differs between the two languages.
+  String get comma => _('، ', ', ');
   String get styleSamples => _('أمثلة أسلوبك', 'Your style');
+  String get samplesEmptyHint => _(
+        'ضيف تلخيص واحد بخطك، والباقي هيتبني عليه.',
+        'Add one summary in your own words; the rest builds on it.',
+      );
+  String get samplesListHint => _(
+        'كل ما تضيف أمثلة، التقليد بيبقى أقرب لأسلوبك.',
+        'The more examples you add, the closer the imitation gets.',
+      );
   String get addStyleSample => _('إضافة مثال', 'Add example');
   String get editStyleSample => _('تعديل المثال', 'Edit example');
   String get sampleTitle => _('عنوان المثال', 'Example title');
@@ -227,6 +554,71 @@ class AppL10n {
       );
 
   String get pickLectureFile => _('اختار ملف المحاضرة', 'Choose lecture file');
+
+  // ------------------------------------------------------- الصوت / audio
+  String get recordLecture => _('سجّل المحاضرة', 'Record lecture');
+  String get uploadAudio => _('ارفع تسجيل', 'Upload audio');
+  String get supportedAudio =>
+      _('mp3 · m4a · wav · ogg · aac', 'mp3 · m4a · wav · ogg · aac');
+  String get recording => _('بيسجّل', 'Recording');
+  String get recordingNoun => _('تسجيل', 'Recording');
+  String get recordingPaused => _('التسجيل متوقف', 'Paused');
+  String get stopRecording => _('خلّصت', 'Finish');
+  String get discardRecording => _('إلغاء التسجيل', 'Discard');
+  String get recordingSaved => _('التسجيل اتحفظ', 'Recording added');
+  String get recordingEmpty =>
+      _('مفيش صوت اتسجّل', 'Nothing was recorded');
+  String get recordingLimitHit => _(
+        'وصلت لأقصى مدة للتسجيل الواحد.',
+        'That is the longest a single recording goes.',
+      );
+
+  /// المصادر اللي هيتلخص منها — ملفات وتسجيلات مع بعض.
+  /// The sources the summary is built from: files and recordings together.
+  String get lectureSources => _('مصادر المحاضرة', 'Lecture sources');
+  String get sourcesHint => _(
+        'ضيف اللي عندك: تسجيل المحاضرة، السلايدات، أو الاتنين مع بعض.',
+        'Add what you have: the recording, the slides, or both together.',
+      );
+  String get removeSource => _('شيل المصدر', 'Remove');
+
+  String get viewTranscript => _('اعرض التفريغ', 'View transcript');
+  String get transcribedLabel => _('اتفرّغ', 'Transcribed');
+  String get transcriptEmpty => _(
+        'التسجيل مفيهوش كلام واضح.',
+        'No speech was found in the recording.',
+      );
+
+  /// "بيفرّغ المقطع 2 من 5" — الرقم بيطمّن إن في تقدّم في الانتظار الطويل.
+  /// "Transcribing part 2 of 5" — the number shows progress through a wait
+  /// that is otherwise silent.
+  /// الرفع بيتعرض لوحده: على نت بطيء هو أطول من التفريغ نفسه بكتير.
+  /// Uploading shows on its own: on a slow line it far outlasts the
+  /// transcription itself.
+  String uploadingPart(int part, int total) => isAr
+      ? 'بيرفع المقطع $part من $total... (حسب سرعة النت)'
+      : 'Uploading part $part of $total... (depends on your connection)';
+
+  String transcribingPart(int part, int total) => isAr
+      ? 'بيفرّغ المقطع $part من $total...'
+      : 'Transcribing part $part of $total...';
+
+  String audioParts(int n) {
+    if (!isAr) return n == 1 ? '1 part' : '$n parts';
+    if (n == 1) return 'مقطع واحد';
+    if (n == 2) return 'مقطعين';
+    if (n <= 10) return '$n مقاطع';
+    return '$n مقطع';
+  }
+
+  String wordCount(int n) {
+    if (!isAr) return n == 1 ? '1 word' : '$n words';
+    if (n == 1) return 'كلمة واحدة';
+    if (n == 2) return 'كلمتين';
+    if (n <= 10) return '$n كلمات';
+    return '$n كلمة';
+  }
+
   String get supportedFiles => _('pdf · pptx · docx · txt · md', 'pdf · pptx · docx · txt · md');
   String get orPasteText => _('أو الزق النص', 'or paste the text');
   String get lectureText => _('نص المحاضرة', 'Lecture text');
@@ -253,6 +645,24 @@ class AppL10n {
 
   // --------------------------------------------------------- model settings
   String get modelSettings => _('إعدادات الموديل', 'Model settings');
+  String get modelSettingsHint => _(
+        'اختار الموديل اللي بيلخّص، أو سيبه تلقائي.',
+        'Pick the model that summarizes, or leave it automatic.',
+      );
+  String get appearance => _('المظهر', 'Appearance');
+  String get appearanceHint => _(
+        'اللغة والوضع وحجم الخط.',
+        'Language, theme, and text size.',
+      );
+  String get studyTools => _('أدوات المذاكرة', 'Study tools');
+  String get studyToolsHint => _(
+        'إعدادات المؤقت والتلخيص.',
+        'Timer and summarizing settings.',
+      );
+  String get styleSamplesHint => _(
+        'التلخيصات اللي التطبيق بيتعلّم منها شكل كتابتك.',
+        'The summaries the app learns your handwriting style from.',
+      );
   String get chooseModel => _('الموديل', 'Model');
   String get testConnection => _('اختبار الاتصال', 'Test connection');
   String get connectedModels => _('متصل — الموديلات المتاحة', 'Connected — models found');

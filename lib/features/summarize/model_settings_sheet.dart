@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
 import 'model_usage.dart';
@@ -71,10 +72,10 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
 
     return Padding(
       padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 4,
-        bottom: MediaQuery.viewInsetsOf(context).bottom + 28,
+        left: Insets.xl,
+        right: Insets.xl,
+        top: Insets.xs,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + Insets.section,
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -105,7 +106,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: Insets.sm),
             Text(
               l.providerGeminiHint,
               style: Theme.of(context)
@@ -113,7 +114,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   .labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Insets.md),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(l.autoModel),
@@ -122,7 +123,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
               onChanged: (v) =>
                   ref.read(settingsProvider.notifier).setAutoModel(v),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Insets.md),
 
             // في الوضع التلقائي مفيش داعي لقايمة من 97 موديل — اللي يهم هو
             // استهلاكك، وده معروض تحت.
@@ -132,7 +133,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
               Row(
                 children: [
                   Icon(Icons.check_circle_rounded, size: 15, color: scheme.primary),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Insets.sm),
                   Text(
                     '${l.connectedModels}: ${_models!.length}',
                     style: Theme.of(context)
@@ -142,7 +143,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: Insets.md),
               DropdownButtonFormField<String>(
                 initialValue: _models!.contains(settings.geminiModel)
                     ? settings.geminiModel
@@ -210,7 +211,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                       .textTheme
                       .labelLarge
                       ?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
+              const SizedBox(height: Insets.sm),
               if (usage.counts.isEmpty)
                 Text(
                   l.noUsageYet,
@@ -223,7 +224,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                 for (final entry in (usage.counts.entries.toList()
                   ..sort((a, b) => b.value.compareTo(a.value))))
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: Insets.sm),
                     child: Row(
                       children: [
                         Expanded(
@@ -244,15 +245,15 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                       ],
                     ),
                   ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Insets.lg),
             ],
 
             if (_error != null) ...[
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(Insets.lg),
                 decoration: BoxDecoration(
                   color: scheme.errorContainer,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: Radii.all(Radii.md),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +266,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                         height: 1.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Insets.sm),
                     SelectableText(
                       _error!.hint ?? l.geminiKeyHint,
                       style: TextStyle(

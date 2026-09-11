@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import '../../models/models.dart';
 import 'style_profile.dart';
+import '../study_ai/study_ai.dart';
 import 'summarizer.dart';
 
 /// إعدادات الوصول لـ Gemini — **من ورا Edge Function**، مش مباشرة.
@@ -36,6 +38,15 @@ class GeminiConfig {
   static const inputTokenBudget = 200000;
 }
 
+/// بيرفع بايتات ويقول وصل فين — بيتحقن عشان الاختبارات ما تحتاجش متصفح.
+/// Uploads bytes and reports progress; injected so the tests need no browser.
+typedef ProgressUploader = Future<({int status, String body})> Function({
+  required Uri url,
+  required Map<String, String> headers,
+  required Uint8List bytes,
+  void Function(int sent, int total)? onProgress,
+});
+
 /// بيلخص عن طريق Gemini، والنداء بيعدي من Supabase Edge Function.
 /// Summarizes via Gemini, with the call routed through a Supabase Edge Function.
 class GeminiSummarizer implements Summarizer {
@@ -44,6 +55,7 @@ class GeminiSummarizer implements Summarizer {
     http.Client? client,
     this.onRequest,
     this.onQuotaLimit,
+    this.uploader,
   }) : _client = client ?? http.Client();
 
   final GeminiConfig config;
@@ -52,6 +64,12 @@ class GeminiSummarizer implements Summarizer {
   /// بيتنادى قبل كل طلب توليد — العدّاد الوحيد الصادق للحصة.
   /// Called before each generation request; the only honest quota counter.
   final void Function(String model)? onRequest;
+
+  /// بيرفع البايتات ويقول وصل فين. لما يكون null بنرفع بعميل http العادي من
+  /// غير تقدّم — ده وضع الاختبارات.
+  /// Uploads the bytes and reports how far it got. When null the plain http
+  /// client uploads without progress, which is what the tests use.
+  final ProgressUploader? uploader;
 
   /// بيتنادى لما جوجل تقول الحد المجاني في رسالة تجاوز الحصة.
   /// Called when Google names the free limit in a quota message.
@@ -77,24 +95,23 @@ class GeminiSummarizer implements Summarizer {
   @override
   Stream<String> summarize({
     String lectureText = '',
-    LectureFile? file,
+    List<LectureFile> files = const [],
     required List<StyleSample> samples,
   }) async* {
-    if (config.accessToken.isEmpty) {
-      throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
-    }
+    _requireSignIn();
+    _requireFitting(files);
 
-    if (file != null && file.isTooBig) {
-      throw SummarizerException(
-        'الملف كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
-        hint: 'الحد الأقصى ${LectureFile.maxBytes ~/ (1024 * 1024)} ميجا — '
-            'قسّم الملف أو صدّره بجودة أقل.',
-      );
+    // الملفات الكبيرة بتترفع الأول؛ الصغيرة بتفضل جوه الطلب.
+    // The large files upload first; the small ones stay inside the request.
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
     }
 
     final prompt = StudyPrompt.build(
       lectureText: lectureText,
-      hasFile: file != null,
+      hasFile: files.isNotEmpty,
       samples: samples,
     );
 
@@ -106,18 +123,178 @@ class GeminiSummarizer implements Summarizer {
       );
     }
 
+    yield* _stream(
+      system: StudyPrompt.system,
+      prompt: prompt,
+      files: inline,
+      uploads: uploads,
+      temperature: 0.4,
+    );
+  }
+
+  @override
+  Future<String> transcribe(LectureFile audio, {UploadedFile? uploaded}) async {
+    _requireSignIn();
+    _requireFitting([audio]);
+
+    // الملف الكبير بيترفع الأول ويتبعت كرابط. الصغير بيتبعت جوه الطلب — رحلة
+    // زيادة لجوجل مش هتفيد في مقطع 2 ميجا.
+    // A large file is uploaded first and sent as a URI. A small one rides
+    // inside the request: a second trip to Google buys nothing for 2 MB.
+    final ref = uploaded ?? (audio.needsUpload ? await upload(audio) : null);
+
+    final buffer = StringBuffer();
+    await for (final piece in _stream(
+      system: StudyPrompt.transcribeSystem,
+      prompt: StudyPrompt.transcribePrompt,
+      files: ref == null ? [audio] : const [],
+      uploads: ref == null ? const [] : [ref],
+      // التفريغ نقل مش تأليف: أقل حرارة ممكنة عشان الموديل ما يكمّلش من عنده
+      // الكلام اللي مش سامعه كويس.
+      // Transcription is transcription, not writing: the lowest temperature, so
+      // the model does not invent its way through what it could not hear.
+      temperature: 0,
+    )) {
+      buffer.write(piece);
+    }
+    return buffer.toString().trim();
+  }
+
+  @override
+  Future<UploadedFile> upload(
+    LectureFile file, {
+    void Function(double fraction)? onProgress,
+  }) async {
+    _requireSignIn();
+    _requireFitting([file]);
+
+    final url = Uri.parse('${config.functionUrl}?action=upload');
+    final headers = {
+      'Authorization': 'Bearer ${config.accessToken}',
+      'apikey': config.anonKey,
+      'Content-Type': 'application/octet-stream',
+      'x-file-mime': file.mimeType,
+      'x-file-size': '${file.bytes.length}',
+      // الهيدرز بتتبعت ASCII بس، واسم المحاضرة غالبًا عربي.
+      // Headers travel as ASCII only, and a lecture's name is usually Arabic.
+      'x-file-name': Uri.encodeComponent(file.name),
+    };
+
+    final int status;
+    final String text;
+    try {
+      final send = uploader;
+      if (send != null) {
+        final result = await send(
+          url: url,
+          headers: headers,
+          bytes: file.bytes,
+          onProgress: (sent, total) =>
+              onProgress?.call(total == 0 ? 0 : sent / total),
+        );
+        status = result.status;
+        text = result.body;
+      } else {
+        final response =
+            await _client.post(url, headers: headers, body: file.bytes);
+        status = response.statusCode;
+        text = utf8.decode(response.bodyBytes);
+      }
+    } catch (e) {
+      throw SummarizerException(
+        'الرفع فشل قبل ما يوصل.',
+        hint: 'اتأكد إن النت شغال وجرب تاني. ($e)',
+      );
+    }
+
+    if (status != 200) {
+      if (status == 429) _learnLimit(text);
+      throw SummarizerException(
+        _statusMessage(status),
+        hint: _statusHint(status) ?? (text.isEmpty ? null : text),
+      );
+    }
+    onProgress?.call(1);
+
+    final body = jsonDecode(text) as Map<String, dynamic>;
+    final uri = body['uri'] as String?;
+    if (uri == null || uri.isEmpty) {
+      throw const SummarizerException('الرفع رجع من غير رابط للملف.');
+    }
+
+    final uploaded = UploadedFile(
+      uri: uri,
+      mimeType: (body['mime_type'] as String?) ?? file.mimeType,
+      name: (body['name'] as String?) ?? '',
+      state: (body['state'] as String?) ?? 'UNKNOWN',
+    );
+
+    if (uploaded.state == 'FAILED') {
+      throw SummarizerException(
+        'الملف اترفع بس الخدمة مش قادرة تقراه.',
+        hint: 'اتأكد إنه ملف صوت سليم، أو صدّره mp3 وجرب تاني.',
+      );
+    }
+    return uploaded;
+  }
+
+  void _requireSignIn() {
+    if (config.accessToken.isEmpty) {
+      throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
+    }
+  }
+
+  /// بيتأكد إن كل ملف جوه السقف قبل ما نبعت حاجة.
+  /// Checks every file is inside the ceiling before anything is sent.
+  ///
+  /// الفحص قبل الإرسال مش بعده: الطلب الكبير بيموت في الـ Edge Function
+  /// بـ WORKER_RESOURCE_LIMIT، ودي رسالة ما بتقولش للمستخدم يعمل إيه.
+  /// Checked before sending rather than after: an oversized request dies inside
+  /// the Edge Function as WORKER_RESOURCE_LIMIT, a message that tells the user
+  /// nothing about what to do.
+  void _requireFitting(List<LectureFile> files) {
+    for (final file in files) {
+      if (!file.isTooBig) continue;
+      throw SummarizerException(
+        '${file.name}: كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
+        hint: 'الحد ${LectureFile.maxBytes ~/ (1024 * 1024)} ميجا — '
+            'صدّر الملف بجودة أقل أو قسّمه.',
+      );
+    }
+  }
+
+  /// أجزاء الملفات في الطلب: المرفوع بالرابط، والصغير ببايتاته.
+  /// The file parts of a request: uploaded ones by URI, small ones by bytes.
+  List<Map<String, String>> _fileParts(
+    List<LectureFile> inline,
+    List<UploadedFile> uploads,
+  ) =>
+      [
+        for (final file in uploads)
+          {'mime_type': file.mimeType, 'file_uri': file.uri},
+        for (final file in inline)
+          {'mime_type': file.mimeType, 'data': base64Encode(file.bytes)},
+      ];
+
+  /// نداء بث واحد — مشترك بين التلخيص والتفريغ.
+  /// One streaming call, shared by summarizing and transcribing.
+  Stream<String> _stream({
+    required String system,
+    required String prompt,
+    required List<LectureFile> files,
+    required double temperature,
+    List<UploadedFile> uploads = const [],
+  }) async* {
     final request = http.Request('POST', Uri.parse(config.functionUrl))
       ..headers.addAll(_headers)
       ..body = jsonEncode({
         'action': 'summarize',
         'model': config.requestedModel,
-        'system': StudyPrompt.system,
+        'system': system,
         'prompt': prompt,
-        if (file != null)
-          'file': {
-            'mime_type': file.mimeType,
-            'data': base64Encode(file.bytes),
-          },
+        'temperature': temperature,
+        if (files.isNotEmpty || uploads.isNotEmpty)
+          'files': _fileParts(files, uploads),
       });
 
     final http.StreamedResponse response;
@@ -139,10 +316,10 @@ class GeminiSummarizer implements Summarizer {
       );
     }
 
-    // الفنكشن بترجّع NDJSON — نفس شكل Ollama عشان الطرفين يتعاملوا بنفس الطريقة.
-    // The function emits NDJSON, deliberately the same shape as Ollama so both
-    // paths parse identically.
-    final lines = response.stream.transform(utf8.decoder).transform(const LineSplitter());
+    // الفنكشن بترجّع NDJSON — سطر لكل قطعة.
+    // The function emits NDJSON: one line per chunk.
+    final lines =
+        response.stream.transform(utf8.decoder).transform(const LineSplitter());
 
     await for (final line in lines) {
       if (line.trim().isEmpty) continue;
@@ -260,14 +437,16 @@ class GeminiSummarizer implements Summarizer {
   @override
   Future<SummaryPage> summarizeAsPage({
     String lectureText = '',
-    LectureFile? file,
+    List<LectureFile> files = const [],
     required List<StyleSample> samples,
     required StyleProfile profile,
   }) async {
-    if (file != null && file.isTooBig) {
-      throw SummarizerException(
-        'الملف كبير جدًا (${file.megabytes.toStringAsFixed(1)} ميجا).',
-      );
+    _requireFitting(files);
+
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
     }
 
     final result = await _postJson({
@@ -276,13 +455,11 @@ class GeminiSummarizer implements Summarizer {
       'system': VisualPrompts.blocksSystem(profile),
       'prompt': StudyPrompt.build(
         lectureText: lectureText,
-        hasFile: file != null,
+        hasFile: files.isNotEmpty,
         samples: samples,
       ),
-      if (file != null)
-        'files': [
-          {'mime_type': file.mimeType, 'data': base64Encode(file.bytes)},
-        ],
+      if (files.isNotEmpty)
+        'files': _fileParts(inline, uploads),
     });
 
     final parsed = decodeModelJson(result);
@@ -294,6 +471,303 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('التلخيص رجع فاضي — جرّب تاني.');
     }
     return page;
+  }
+
+  @override
+  Future<List<GeneratedCard>> makeCards(String source, {int count = 8}) async {
+    _requireSignIn();
+    _requireText(source);
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyAiPrompts.cardsSystem,
+      'prompt': StudyAiPrompts.cardsPrompt(_capped(source), count),
+    });
+
+    final rows = decodeModelJson(result)?['cards'];
+    if (rows is! List) {
+      throw const SummarizerException('الكروت رجعت بشكل مش مفهوم.');
+    }
+
+    final cards = <GeneratedCard>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final card = GeneratedCard.fromJson(row.map((k, v) => MapEntry('$k', v)));
+      if (card != null) cards.add(card);
+    }
+
+    if (cards.isEmpty) {
+      throw const SummarizerException(
+        'مطلعش كروت من المحتوى ده.',
+        hint: 'المحتوى ممكن يكون قصير أوي أو مفيهوش معلومات تتحفظ.',
+      );
+    }
+    return cards;
+  }
+
+  @override
+  Stream<String> ask({
+    required String source,
+    required String question,
+    List<AskTurn> history = const [],
+  }) async* {
+    _requireSignIn();
+    _requireText(source);
+
+    yield* _stream(
+      system: StudyAiPrompts.askSystem,
+      prompt: StudyAiPrompts.askPrompt(
+        source: _capped(source),
+        question: question,
+        history: history,
+      ),
+      files: const [],
+      // الإجابة من محتوى موجود: الحرارة الواطية بتخليها تلتزم بيه.
+      // The answer comes from material that exists; a low temperature keeps it
+      // there.
+      temperature: 0.2,
+    );
+  }
+
+  @override
+  Future<List<ExamQuestion>> makeExam({
+    required String source,
+    int choiceCount = 6,
+    int writtenCount = 2,
+  }) async {
+    _requireSignIn();
+    _requireText(source);
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyAiPrompts.examSystem,
+      'prompt': StudyAiPrompts.examPrompt(
+        source: _capped(source),
+        choiceCount: choiceCount,
+        writtenCount: writtenCount,
+      ),
+    });
+
+    final rows = decodeModelJson(result)?['questions'];
+    if (rows is! List) {
+      throw const SummarizerException('الامتحان رجع بشكل مش مفهوم.');
+    }
+
+    final questions = <ExamQuestion>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final q = ExamQuestion.fromJson(row.map((k, v) => MapEntry('$k', v)));
+      if (q != null) questions.add(q);
+    }
+
+    if (questions.isEmpty) {
+      throw const SummarizerException('مطلعش أسئلة من المحتوى ده.');
+    }
+    return questions;
+  }
+
+  @override
+  Future<ExamResult> gradeExam({
+    required String source,
+    required List<AnsweredQuestion> answers,
+  }) async {
+    _requireSignIn();
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyAiPrompts.gradeSystem,
+      'prompt': StudyAiPrompts.gradePrompt(
+        source: _capped(source),
+        answers: [
+          for (final a in answers)
+            (
+              index: a.index,
+              question: a.question,
+              expected: a.expected,
+              answer: a.answer,
+            ),
+        ],
+      ),
+    });
+
+    final parsed = decodeModelJson(result);
+    if (parsed == null) {
+      throw const SummarizerException('التصحيح رجع بشكل مش مفهوم.');
+    }
+
+    final marks = <WrittenMark>[];
+    final rawMarks = parsed['marks'];
+    if (rawMarks is List) {
+      for (final row in rawMarks) {
+        if (row is! Map) continue;
+        final mark = WrittenMark.fromJson(row.map((k, v) => MapEntry('$k', v)));
+        if (mark != null) marks.add(mark);
+      }
+    }
+
+    final weak = <String>[];
+    final rawWeak = parsed['weak'];
+    if (rawWeak is List) {
+      for (final w in rawWeak) {
+        final text = '$w'.trim();
+        if (text.isNotEmpty) weak.add(text);
+      }
+    }
+
+    return ExamResult(
+      marks: marks,
+      weakSpots: weak,
+      advice: '${parsed['advice'] ?? ''}'.trim(),
+    );
+  }
+
+  @override
+  Future<StudyPlan> makePlan(String facts) async {
+    _requireSignIn();
+    _requireText(facts);
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyAiPrompts.planSystem,
+      'prompt': facts,
+    });
+
+    final parsed = decodeModelJson(result);
+    final rows = parsed?['days'];
+    if (rows is! List) {
+      throw const SummarizerException('الخطة رجعت بشكل مش مفهوم.');
+    }
+
+    final days = <PlanDay>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final weekday = ParsedLecture.weekdayFromName('${row['day'] ?? ''}');
+      if (weekday == null) continue;
+
+      final items = <PlanItem>[];
+      final rawItems = row['items'];
+      if (rawItems is List) {
+        for (final item in rawItems) {
+          if (item is! Map) continue;
+          final planItem =
+              PlanItem.fromJson(item.map((k, v) => MapEntry('$k', v)));
+          if (planItem != null) items.add(planItem);
+        }
+      }
+      if (items.isNotEmpty) days.add(PlanDay(weekday: weekday, items: items));
+    }
+
+    if (days.isEmpty) {
+      throw const SummarizerException('مطلعتش خطة — جرّب تاني.');
+    }
+
+    days.sort((a, b) => a.weekday.compareTo(b.weekday));
+    return StudyPlan(
+      days: days,
+      note: '${parsed?['note'] ?? ''}'.trim(),
+    );
+  }
+
+  void _requireText(String source) {
+    if (source.trim().length < 40) {
+      throw const SummarizerException(
+        'المحتوى قصير أوي.',
+        hint: 'لخّص المحاضرة الأول أو احفظها كملاحظة، وبعدين جرّب.',
+      );
+    }
+  }
+
+  /// المحتوى الطويل بيتقص قبل ما يتبعت — الطلب اللي بيعدي السقف بيترفض كله.
+  /// Long material is trimmed before it is sent: a request past the ceiling is
+  /// refused whole.
+  String _capped(String source) {
+    const limit = GeminiConfig.inputTokenBudget * 2;
+    final text = source.trim();
+    return text.length <= limit ? text : text.substring(0, limit);
+  }
+
+  @override
+  Future<ParsedSchedule> parseSchedule({
+    String text = '',
+    List<LectureFile> images = const [],
+  }) async {
+    _requireSignIn();
+    _requireFitting(images);
+
+    if (text.trim().isEmpty && images.isEmpty) {
+      throw const SummarizerException('محطتش جدول ولا صورة.');
+    }
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyPrompt.scheduleSystem,
+      'prompt': StudyPrompt.schedulePrompt(text),
+      if (images.isNotEmpty)
+        'files': [
+          for (final image in images)
+            {'mime_type': image.mimeType, 'data': base64Encode(image.bytes)},
+        ],
+    });
+
+    final parsed = decodeModelJson(result);
+    final rows = parsed?['entries'];
+    if (rows is! List) {
+      throw const SummarizerException('الجدول رجع بشكل مش مفهوم.');
+    }
+
+    final groups = <String>[];
+    final rawGroups = parsed?['groups'];
+    if (rawGroups is List) {
+      for (final g in rawGroups) {
+        final name = '$g'.trim();
+        if (name.isNotEmpty && !groups.contains(name)) groups.add(name);
+      }
+    }
+
+    // الصف الناقص بيتشال بدل ما يوقف الباقي: جدول فيه 12 محاضرة وواحدة
+    // مقروءة غلط لسه أنفع من رسالة خطأ.
+    // A malformed row is dropped rather than stopping the rest: a timetable
+    // with twelve lectures and one misread row still beats an error message.
+    final entries = <ParsedLecture>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final lecture = ParsedLecture.fromJson(
+        row.map((k, v) => MapEntry('$k', v)),
+      );
+      if (lecture != null) entries.add(lecture);
+    }
+
+    if (entries.isEmpty) {
+      throw const SummarizerException(
+        'مفيش محاضرات اتقريت من الجدول.',
+        hint: 'اتأكد إن الصورة واضحة، أو الزق الجدول كنص.',
+      );
+    }
+
+    entries.sort((a, b) => a.weekday != b.weekday
+        ? a.weekday.compareTo(b.weekday)
+        : a.startMinutes.compareTo(b.startMinutes));
+
+    // الأقسام اللي ظهرت في المحاضرات بتتضاف لو الموديل نساها في القايمة.
+    // Sections that turned up on the lectures are added when the model left
+    // them out of its own list.
+    for (final entry in entries) {
+      if (entry.group.isNotEmpty && !groups.contains(entry.group)) {
+        groups.add(entry.group);
+      }
+    }
+
+    return ParsedSchedule(
+      entries: entries,
+      groups: groups,
+      groupLabel: '${parsed?['group_label'] ?? ''}'.trim(),
+      note: '${parsed?['note'] ?? ''}'.trim(),
+    );
   }
 
   /// نداء واحد بيرجّع JSON — مشترك بين التحليل والتلخيص المنظم.

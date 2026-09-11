@@ -6,6 +6,7 @@ import '../../data/providers.dart';
 import 'gemini_summarizer.dart';
 import 'model_usage.dart';
 import 'summarizer.dart';
+import 'web_upload.dart';
 
 /// الملخّص المستخدم في التطبيق.
 /// The summarizer the app uses.
@@ -28,6 +29,7 @@ final activeSummarizerProvider = Provider<Summarizer>((ref) {
     anonKey: SupabaseConfig.anonKey,
     model: settings.autoModel ? '' : settings.geminiModel,
   ),
+    uploader: uploadBytes,
     onRequest: (model) => ref.read(modelUsageProvider.notifier).record(model),
     onQuotaLimit: (model, limit) =>
         ref.read(modelUsageProvider.notifier).noteLimit(model, limit),

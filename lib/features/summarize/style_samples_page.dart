@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
@@ -16,7 +17,6 @@ class StyleSamplesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l;
     final samplesAsync = ref.watch(styleSamplesProvider);
-    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: Text(l.styleSamples)),
@@ -26,75 +26,40 @@ class StyleSamplesPage extends ConsumerWidget {
         label: Text(l.addStyleSample),
       ),
       body: samplesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const LoadingView(),
         error: (e, _) => ErrorView(
           error: e,
           onRetry: () => ref.invalidate(styleSamplesProvider),
         ),
         data: (samples) {
-          if (samples.isEmpty) {
-            return PageBody(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 8),
-                  const PageLookCard(),
-                  EmptyState(
-                    icon: Icons.auto_awesome_outlined,
-                    message: '${l.noSamplesYet}\n\n${l.samplesIntro}',
-                    action: FilledButton.icon(
-                      onPressed: () =>
-                          openStyleSampleEditor(context, ref, null),
-                      icon: const Icon(Icons.add_rounded),
-                      label: Text(l.addStyleSample),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
           return PageBody(
+            maxWidth: 860,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: Insets.sm),
+                InfoBanner(message: l.samplesIntro),
+                const SizedBox(height: Insets.lg),
+                const PageLookCard(),
+                if (samples.isEmpty)
+                  EmptyState(
+                    icon: Icons.auto_awesome_outlined,
+                    title: l.noSamplesYet,
+                    message: l.samplesEmptyHint,
+                    action: FilledButton.icon(
+                      onPressed: () => openStyleSampleEditor(context, ref, null),
+                      icon: const Icon(Icons.add_rounded, size: 19),
+                      label: Text(l.addStyleSample),
+                    ),
+                  )
+                else ...[
+                  SectionHeader(l.styleSamples, subtitle: l.samplesListHint),
+                  CardGrid(
                     children: [
-                      Icon(
-                        Icons.lightbulb_outline_rounded,
-                        size: 18,
-                        color: scheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          l.samplesIntro,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: scheme.onPrimaryContainer,
-                                height: 1.5,
-                              ),
-                        ),
-                      ),
+                      for (final s in samples) _SampleCard(sample: s),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                const PageLookCard(),
-                const SizedBox(height: 16),
-                for (final s in samples)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _SampleCard(sample: s),
-                  ),
+                ],
               ],
             ),
           );
@@ -112,45 +77,40 @@ class _SampleCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final subject = ref.watch(subjectMapProvider)[sample.subjectId];
 
-    return Card(
-      child: InkWell(
-        onTap: () => openStyleSampleEditor(context, ref, sample),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return AppCard(
+      onTap: () => openStyleSampleEditor(context, ref, sample),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            sample.title.isEmpty ? context.l.sampleTitle : sample.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.titleSmall,
+          ),
+          const SizedBox(height: Insets.sm),
+          Text(
+            sample.body,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: Insets.md),
+          Row(
             children: [
+              Flexible(child: SubjectChip(subject: subject, dense: true)),
+              const Spacer(),
               Text(
-                sample.title.isEmpty ? context.l.sampleTitle : sample.title,
-                style: Theme.of(context).textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                sample.body,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  SubjectChip(subject: subject, dense: true),
-                  const Spacer(),
-                  Text(
-                    '~${sample.approxTokens} ${context.l.approxTokens}',
-                    style: Theme.of(context).textTheme.labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ],
+                '~${sample.approxTokens} ${context.l.approxTokens}',
+                style:
+                    text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -252,20 +212,20 @@ class _SampleEditorPageState extends ConsumerState<_SampleEditorPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 8),
+            const SizedBox(height: Insets.sm),
             TextField(
               controller: _title,
               decoration: InputDecoration(
                 labelText: '${l.sampleTitle} (${l.optional})',
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             SubjectDropdown(
               subjects: subjects,
               value: _subjectId,
               onChanged: (v) => setState(() => _subjectId = v),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: Insets.lg),
             TextField(
               controller: _body,
               autofocus: existing == null,
