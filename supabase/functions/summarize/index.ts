@@ -65,23 +65,38 @@ function isSignedInUser(req: Request): boolean {
   }
 }
 
-/// ترتيب الموديل للتلخيص النصي — الأقل رقمًا يظهر الأول.
-/// A model's rank for text summarizing; lower sorts first.
+/// ترتيب الموديل — الأقل رقمًا يظهر الأول.
+/// A model's rank; lower sorts first.
 ///
 /// المعيار عام مش مربوط بأرقام إصدارات معينة، عشان القايمة تفضل معقولة لما
 /// جوجل تطرح موديلات جديدة من غير ما نعدّل الكود.
+///
+/// [preferPro] بتقلب الأولوية: جدول كثيف كلاسيكيًا محتاج قراية دقيقة لشبكة
+/// أعمدة صغيرة أهم من سرعة الرد — flash بيجري أسرع بس بيغلط في عدّ الأعمدة،
+/// وpro أبطأ لكن أدق في القراية البصرية المزدحمة دي.
 /// The rules are generic rather than pinned to version numbers, so the list
 /// stays sensible as Google ships new models without us touching this code.
-function rank(name: string): number {
+///
+/// [preferPro] flips the priority: a dense timetable needs precise reading of
+/// a small column grid more than a fast reply — flash answers quicker but
+/// miscounts columns, while pro is slower but more reliable at this kind of
+/// crowded visual reading.
+function rank(name: string, preferPro = false): number {
   if (!name.startsWith("gemini-")) return 60; // gemma وغيرها
   let score = 0;
   if (name.includes("preview")) score += 20; // مش مستقر
   if (name.includes("exp")) score += 20;
   if (name.includes("image")) score += 15; // متخصص في الصور مش النص
   if (name.includes("lite")) score += 5; // أضعف في المهام الطويلة
-  if (name.includes("flash")) score += 0; // الأنسب للتلخيص: سريع ورخيص
-  else if (name.includes("pro")) score += 2;
-  else score += 10;
+  if (preferPro) {
+    if (name.includes("pro")) score += 0;
+    else if (name.includes("flash")) score += 2;
+    else score += 10;
+  } else {
+    if (name.includes("flash")) score += 0; // الأنسب للتلخيص: سريع ورخيص
+    else if (name.includes("pro")) score += 2;
+    else score += 10;
+  }
   // "-latest" بيشاور على أحدث موديل، وأحدث موديل حصته المجانية أضيق —
   // المستخدم على المفتاح المجاني بيستفيد أكتر من نسخة مستقرة برقم ثابت.
   // "-latest" tracks the newest model, and the newest model carries the
@@ -172,28 +187,37 @@ function retryFailure(attempt: Attempt): Response {
   );
 }
 
-/// قائمة الموديلات المرتّبة، متخزنة مؤقتًا.
-/// The ranked model list, briefly cached.
+/// أسماء الموديلات المفلترة (من غير ترتيب)، متخزنة مؤقتًا.
+/// The filtered model names (unsorted), briefly cached.
 ///
 /// نداء التسلسل التلقائي محتاج القايمة قبل كل تلخيص؛ من غير التخزين ده هيبقى
-/// في طلب زيادة لجوجل مع كل مرة.
-/// Auto-mode needs the list before every summary; without this cache that is an
-/// extra Google request each time.
-let rankedCache: { models: string[]; at: number } | null = null;
+/// في طلب زيادة لجوجل مع كل مرة. الترتيب اتفصل عن الفلترة عشان تفضيلة واحدة
+/// (زي [preferPro]) ما تحتاجش تجيب القايمة من جوجل تاني — بترتب اللي اتخزن
+/// بس.
+/// Auto-mode needs the list before every summary; without this cache that is
+/// an extra Google request each time. Sorting is split from filtering so a
+/// one-off preference (like [preferPro]) does not need a fresh fetch — it
+/// just re-sorts what is already cached.
+let filteredCache: { names: string[]; at: number } | null = null;
 const RANKED_TTL_MS = 10 * 60 * 1000;
 
-async function rankedModels(apiKey: string): Promise<string[]> {
-  if (rankedCache && Date.now() - rankedCache.at < RANKED_TTL_MS) {
-    return rankedCache.models;
+async function filteredModelNames(apiKey: string): Promise<string[]> {
+  if (filteredCache && Date.now() - filteredCache.at < RANKED_TTL_MS) {
+    return filteredCache.names;
   }
   const upstream = await fetch(`${GEMINI_BASE}/models?key=${apiKey}&pageSize=200`);
   if (!upstream.ok) {
     await upstream.text();
     return [];
   }
-  const models = rankModels(await upstream.json());
-  rankedCache = { models, at: Date.now() };
-  return models;
+  const names = filterModelNames(await upstream.json());
+  filteredCache = { names, at: Date.now() };
+  return names;
+}
+
+async function rankedModels(apiKey: string, preferPro = false): Promise<string[]> {
+  const names = await filteredModelNames(apiKey);
+  return sortModels(names, preferPro);
 }
 
 /// بيرجّع الموديلات اللي بتدعم التوليد بالبث.
@@ -212,7 +236,7 @@ async function listModels(apiKey: string): Promise<Response> {
   const all: Array<{ name?: string; supportedGenerationMethods?: string[] }> =
     body.models ?? [];
 
-  const models = rankModels(body);
+  const models = sortModels(filterModelNames(body));
 
   // بنرجّع الإجمالي عشان نفرق بين "جوجل ردت فاضي" و"الفلتر بتاعنا فضّاها".
   // Return the raw total so "Google sent nothing" is distinguishable from
@@ -220,13 +244,13 @@ async function listModels(apiKey: string): Promise<Response> {
   return json({ models, total: all.length });
 }
 
-/// بيفلتر ويرتّب رد قائمة الموديلات.
-/// Filters and ranks the model-list response.
-function rankModels(body: {
+/// بيفلتر رد قائمة الموديلات لأسماء صالحة للتلخيص، من غير ترتيب.
+/// Filters the model-list response to names usable for summarizing, unsorted.
+function filterModelNames(body: {
   models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
 }): string[] {
   const all = body.models ?? [];
-  const models: string[] = all
+  return all
     .filter((m) => {
       // الفلتر متسامح بقصد: لو جوجل ما رجّعتش قائمة الطرق المدعومة، بنعتبر
       // الموديل صالح بدل ما نشيله. الفلترة الصارمة كانت بتفضي القائمة كلها.
@@ -249,11 +273,16 @@ function rankModels(body: {
       !name.includes("veo") &&
       !name.includes("tts")
     );
+}
 
-  // الترتيب بالفايدة مش بالأبجدية: الأول في القايمة هو اللي بيتجرب الأول.
-  // Ranked by usefulness, not alphabetically: the first entry is tried first.
-  models.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-  return models;
+/// بيرتّب أسماء موديلات مفلترة بالفايدة مش بالأبجدية.
+/// Sorts already-filtered model names by usefulness, not alphabetically.
+function sortModels(names: string[], preferPro = false): string[] {
+  // الأول في القايمة هو اللي بيتجرب الأول.
+  // The first entry is the one tried first.
+  return [...names].sort((a, b) =>
+    rank(a, preferPro) - rank(b, preferPro) || a.localeCompare(b)
+  );
 }
 
 /// ملف داخل الطلب: إما بايتاته جوه الطلب، أو إشارة لملف مرفوع عند جوجل.
@@ -666,13 +695,14 @@ async function candidatesFor(
   apiKey: string,
   model?: string,
   limit = 5,
+  preferPro = false,
 ): Promise<string[]> {
   if (model && model != "auto") return [model];
 
   // بنقف عند الحد المطلوب: بعد كده الانتظار بيبقى أطول من فايدته للمستخدم.
   // Capped at the requested limit: past that the wait costs the user more
   // than it buys.
-  const ranked = await rankedModels(apiKey);
+  const ranked = await rankedModels(apiKey, preferPro);
   return ranked.slice(0, limit);
 }
 
@@ -724,6 +754,7 @@ Deno.serve(async (req: Request) => {
     files?: RequestFile[];
     temperature?: number;
     file_name?: string;
+    prefer_pro?: boolean;
   };
   try {
     body = await req.json();
@@ -772,7 +803,12 @@ Deno.serve(async (req: Request) => {
       const jsonMaxAttempts = files?.length ? 1 : 3;
       return await generateJson(
         apiKey,
-        await candidatesFor(apiKey, body.model, jsonMaxCandidates),
+        await candidatesFor(
+          apiKey,
+          body.model,
+          jsonMaxCandidates,
+          body.prefer_pro === true,
+        ),
         body.system ?? "",
         body.prompt,
         files,

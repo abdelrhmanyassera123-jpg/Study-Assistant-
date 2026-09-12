@@ -743,6 +743,13 @@ class GeminiSummarizer implements Summarizer {
       {
         'action': 'json',
         'model': config.requestedModel,
+        // جدول كثيف محتاج قراية دقيقة لشبكة أعمدة صغيرة أهم من سرعة الرد —
+        // متجاهلة لو المستخدم اختار موديل بعينه (الاسم بياخد الأولوية على
+        // السيرفر أصلاً).
+        // A dense timetable needs precise reading of a small column grid more
+        // than a fast reply — ignored when the user picked a specific model
+        // (the name already takes priority on the server).
+        'prefer_pro': true,
         'system': StudyPrompt.scheduleSystem,
         'prompt': StudyPrompt.schedulePrompt(text),
         if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
