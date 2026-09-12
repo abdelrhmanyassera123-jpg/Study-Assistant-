@@ -701,6 +701,19 @@ class AppL10n {
         'The service starts with the best available model and moves to the next '
             'when one is out of quota or busy, with nothing to do on your side.',
       );
+  /// تحذير تحت الاختيار اليدوي: القايمة من جوجل مش بتقول مفتاحك المجاني
+  /// شغال على أنهي موديل منها بالظبط.
+  /// A warning under manual picking: Google's list does not say which of
+  /// them a free key actually works on.
+  String get manualModelHint => _(
+        'القايمة دي كل الموديلات اللي مفتاحك يقدر يشوفها — مش كلها بالضرورة '
+            'شغالة على الخطة المجانية. لو موديل معين بيرجّع خطأ الحصة على '
+            'طول، جرب غيره من هنا أو ارجع للاختيار التلقائي فوق.',
+        "This list is every model your key can see — not all of them "
+            "necessarily work on the free plan. If one keeps returning a "
+            "quota error, try another from here or switch back to automatic "
+            "above.",
+      );
   String get autoLabel => _('تلقائي', 'Automatic');
   String get lastUsedModel => _('آخر موديل رد', 'Last model used');
   String get usageTitle => _('استهلاكك النهاردة', 'Your usage today');

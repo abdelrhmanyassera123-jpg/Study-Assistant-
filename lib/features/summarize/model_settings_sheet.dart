@@ -193,6 +193,14 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   }
                 },
               ),
+              const SizedBox(height: Insets.sm),
+              Text(
+                l.manualModelHint,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
+              ),
             ] else if (!settings.autoModel && _loading)
               const Center(
                 child: Padding(
