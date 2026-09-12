@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -785,19 +786,28 @@ class GeminiSummarizer implements Summarizer {
 
   /// نداء واحد بيرجّع JSON — مشترك بين التحليل والتلخيص المنظم.
   /// One JSON-returning call, shared by the analysis and the structured summary.
+  ///
+  /// الرد NDJSON: بينج كل 15 ثانية لحد ما جوجل يرد، وآخر سطر فيه النتيجة أو
+  /// الخطأ. نفس آلية `_stream` بالظبط، ومتحقّق منها محليًا بسيرفر Node قبل
+  /// النشر: البايتات بتوصل لحظة بلحظة، والتقسيم على أسطر شغال حتى لو كذا
+  /// سطر جم في نفس الحزمة.
+  /// The reply is NDJSON: a heartbeat every 15s while waiting on Google, then
+  /// a final line with the result or the error. Same mechanism as `_stream`,
+  /// and verified locally with a Node server before shipping: bytes arrive
+  /// incrementally, and line-splitting holds up even when several lines land
+  /// in one packet.
   Future<Object?> _postJson(Map<String, dynamic> payload) async {
     if (config.accessToken.isEmpty) {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
 
-    final http.Response response;
+    final request = http.Request('POST', Uri.parse(config.functionUrl))
+      ..headers.addAll(_headers)
+      ..body = jsonEncode(payload);
+
+    final http.StreamedResponse response;
     try {
-      response = await _client
-          .post(Uri.parse(config.functionUrl),
-              headers: _headers, body: jsonEncode(payload))
-          // التحليل البصري بياخد وقت أطول من التلخيص العادي.
-          // Vision analysis takes longer than a plain summary.
-          .timeout(const Duration(minutes: 3));
+      response = await _client.send(request).timeout(const Duration(seconds: 30));
     } catch (e) {
       throw SummarizerException(
         'مش قادر أوصل لخدمة التلخيص.',
@@ -806,7 +816,7 @@ class GeminiSummarizer implements Summarizer {
     }
 
     if (response.statusCode != 200) {
-      final body = utf8.decode(response.bodyBytes);
+      final body = await response.stream.bytesToString();
       if (response.statusCode == 429) _learnLimit(body);
       throw SummarizerException(
         _statusMessage(response.statusCode),
@@ -814,14 +824,52 @@ class GeminiSummarizer implements Summarizer {
       );
     }
 
-    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final error = body['error'];
-    if (error != null) throw SummarizerException('$error');
+    final lines = response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        // بينج كل 15 ثانية من عندهم؛ 50 ثانية من غير حرف يبقى الاتصال اتقطع.
+        // Heartbeats arrive every 15s from their side; 50s with nothing means
+        // the connection itself dropped.
+        .timeout(const Duration(seconds: 50));
 
-    final answered = body['model'] as String?;
-    if (answered != null && answered.isNotEmpty) onRequest?.call(answered);
+    try {
+      await for (final line in lines) {
+        if (line.trim().isEmpty) continue;
 
-    return body['result'];
+        final Map<String, dynamic> chunk;
+        try {
+          chunk = jsonDecode(line) as Map<String, dynamic>;
+        } on FormatException {
+          continue;
+        }
+
+        if (chunk['pending'] == true) continue;
+
+        final error = chunk['error'];
+        if (error != null) {
+          final status = chunk['status'] as int?;
+          final detail = chunk['detail'] as String?;
+          final body = [error, detail].whereType<String>().join('\n');
+          if (status == 429) _learnLimit(body);
+          throw SummarizerException(
+            status != null ? _statusMessage(status) : '$error',
+            hint: status != null ? (_statusHint(status) ?? body) : detail,
+          );
+        }
+
+        final answered = chunk['model'] as String?;
+        if (answered != null && answered.isNotEmpty) onRequest?.call(answered);
+
+        return chunk['result'];
+      }
+    } on TimeoutException {
+      throw const SummarizerException(
+        'خدمة التلخيص ماردتش من زمان.',
+        hint: 'جرب تاني.',
+      );
+    }
+
+    throw const SummarizerException('خدمة التلخيص رجعت رد فاضي.');
   }
 
   String _statusMessage(int status) => switch (status) {

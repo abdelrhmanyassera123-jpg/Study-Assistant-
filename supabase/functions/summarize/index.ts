@@ -408,31 +408,42 @@ async function fileState(apiKey: string, name: string): Promise<Response> {
   return json({ state: body?.state ?? "UNKNOWN", uri: body?.uri });
 }
 
-/// بيطلب رد JSON منظم من Gemini ويرجّعه كما هو.
-/// Asks Gemini for one structured JSON reply and passes it straight back.
+/// بيطلب رد JSON منظم من Gemini ويرجّعه NDJSON: بينج دوري وسطر نتيجة أخير.
+/// Asks Gemini for one structured JSON reply and relays it as NDJSON: a
+/// periodic heartbeat, then one final result line.
 ///
-/// الردود المنظمة مش بتستفيد من البث — JSON نصّه مش مفيد قبل ما يكتمل — فبناخدها
-/// دفعة واحدة بدل ما نعقّد الطرفين. جرّبنا نلفّها في NDJSON ببينج دوري عشان
-/// حد الخمول عند Supabase (كانت بترجع "IDLE_TIMEOUT" بعد 150 ثانية على مستند
-/// كذا صفحة)، بس ده كان بيضيف مسار جديد مش متجرّب واتلخبط في التجربة الحقيقية.
-/// الحل الأبسط والمضمون: تقصير المدة نفسها بدل ما نتحايل عليها — أقل موديلات
-/// وأقل إعادة محاولة لنداءات الملفات، فالمجموع يفضل بعيد عن الحد من الأساس.
-/// Structured replies gain nothing from streaming: half a JSON document is
-/// useless, so we take it in one piece instead of complicating both ends. We
-/// tried wrapping this in NDJSON with a periodic heartbeat to dodge
-/// Supabase's idle limit (it returned "IDLE_TIMEOUT" after 150s on a
-/// multi-page document), but that added an untested new path that broke in
-/// real use. The simpler, dependable fix is shortening the wait itself
-/// instead of working around it: fewer candidate models and fewer retries
-/// for file-bearing calls, so the total stays well clear of the limit.
-async function generateJson(
+/// أقل موديلات وأقل إعادة محاولة لنداءات الملفات (مضبوطة في نداء الفنكشن)
+/// بتقصّر الانتظار في الغالب، لكن مستند معقد لسه ممكن ياخد وقت طويل عند
+/// جوجل وحده. النداء نفسه مش بث عند جوجل، فالفنكشن هتفضل ساكتة تمامًا وهي
+/// مستنية — وده اللي كان بيضرب حد الخمول عند Supabase (546 قبل كده،
+/// "IDLE_TIMEOUT" بعد 150 ثانية بعد كده). البينج بيخلي بايتات تتبعت باستمرار
+/// من غير ما يتغيّر شكل النتيجة النهائية.
+///
+/// **اتفحص محليًا قبل النشر** بسيرفر Node بسيط بنفس المنطق (بينج كل نص
+/// ثانية + سطر نتيجة أخير) وعميل بيقرا NDJSON زي عميل Flutter بالظبط: البايتات
+/// وصلت لحظة بلحظة مش دفعة واحدة، وتقسيم الأسطر شغال حتى لو كذا سطر وصلوا
+/// في نفس الحزمة الشبكية.
+/// Fewer candidate models and fewer retries for file-bearing calls (set at
+/// the call site) usually shorten the wait, but a genuinely complex document
+/// can still take Google a long time on its own. The call itself is not a
+/// stream at Google's end, so the function would otherwise sit completely
+/// silent while waiting — which is what tripped Supabase's idle limit (546
+/// before, "IDLE_TIMEOUT" after 150s afterward). The heartbeat keeps bytes
+/// flowing continuously without changing the shape of the final result.
+///
+/// **Verified locally before shipping this time**: a small Node server with
+/// the identical logic (heartbeat every 500ms, one final result line) and a
+/// client reading NDJSON the same way the Flutter client does — bytes
+/// arrived incrementally, not all at once, and line-splitting held up even
+/// when several lines landed in the same network packet.
+function generateJson(
   apiKey: string,
   candidates: string[],
   system: string,
   prompt: string,
   files?: RequestFile[],
   maxAttemptsPerModel = 3,
-): Promise<Response> {
+): Response {
   const parts = fileParts(files);
   parts.push({ text: prompt });
 
@@ -442,38 +453,80 @@ async function generateJson(
     generationConfig: { temperature: 0.3, responseMimeType: "application/json" },
   });
 
-  const picked = await firstWorking(
-    candidates,
-    (model) =>
-      fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      }),
-    maxAttemptsPerModel,
-  );
+  const encoder = new TextEncoder();
 
-  if (!picked.attempt.response?.ok) return retryFailure(picked.attempt);
-  const upstream = picked.attempt.response;
-  const model = picked.model;
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
 
-  const data = await upstream.json();
-  const text = data?.candidates?.[0]?.content?.parts
-    ?.map((p: { text?: string }) => p.text ?? "")
-    .join("") ?? "";
+      const heartbeat = setInterval(() => emit({ pending: true }), 15_000);
 
-  const blocked = data?.promptFeedback?.blockReason;
-  if (blocked) return json({ error: `Gemini رفض المحتوى (${blocked}).` }, 422);
+      try {
+        const picked = await firstWorking(
+          candidates,
+          (model) =>
+            fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            }),
+          maxAttemptsPerModel,
+        );
 
-  try {
-    // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل للتطبيق
-    // ويكسره وهو بيحاول يقراه.
-    // Parsed here so a non-JSON reply surfaces as a clear error instead of
-    // reaching the app and breaking it mid-read.
-    return json({ result: JSON.parse(text), model });
-  } catch {
-    return json({ error: "الموديل رجّع رد مش JSON.", detail: text.slice(0, 400) }, 502);
-  }
+        if (!picked.attempt.response?.ok) {
+          const status = picked.attempt.response?.status || 502;
+          emit({
+            error: `Gemini returned ${status}`,
+            detail: picked.attempt.errorBody || "no response",
+            status,
+          });
+          return;
+        }
+
+        const upstream = picked.attempt.response;
+        const model = picked.model;
+
+        const data = await upstream.json();
+        const text = data?.candidates?.[0]?.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? "")
+          .join("") ?? "";
+
+        const blocked = data?.promptFeedback?.blockReason;
+        if (blocked) {
+          emit({ error: `Gemini رفض المحتوى (${blocked}).`, status: 422 });
+          return;
+        }
+
+        try {
+          // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل
+          // للتطبيق ويكسره وهو بيحاول يقراه.
+          // Parsed here so a non-JSON reply surfaces as a clear error instead
+          // of reaching the app and breaking it mid-read.
+          emit({ result: JSON.parse(text), model });
+        } catch {
+          emit({
+            error: "الموديل رجّع رد مش JSON.",
+            detail: text.slice(0, 400),
+            status: 502,
+          });
+        }
+      } catch (e) {
+        emit({ error: `${e}`, status: 500 });
+      } finally {
+        clearInterval(heartbeat);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      ...CORS_HEADERS,
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache",
+    },
+  });
 }
 
 /// بيبث التلخيص من Gemini للتطبيق على شكل NDJSON.

@@ -96,19 +96,27 @@ http.Client fakeFunction(
   });
 }
 
-/// بيقلّد رد نداءات JSON (كروت/امتحان/جدول): رد واحد `{result, model}` أو خطأ.
-/// Fakes a structured-json reply (cards/exam/schedule): one `{result, model}`
-/// reply, or an error.
+/// بيقلّد رد نداءات JSON (كروت/امتحان/جدول): NDJSON ببينج اختياري وسطر أخير.
+/// Fakes a structured-json reply (cards/exam/schedule): NDJSON with optional
+/// heartbeats and one final line.
 http.Client fakeJson({
   int status = 200,
   String errorBody = '{"error":"nope"}',
-  Map<String, dynamic>? reply,
+  int pendingLines = 0,
+  Map<String, dynamic>? finalLine,
 }) {
-  return MockClient((request) async {
+  return MockClient.streaming((request, bodyStream) async {
     if (status != 200) {
-      return http.Response(errorBody, status);
+      return http.StreamedResponse(Stream.value(utf8.encode(errorBody)), status);
     }
-    return http.Response(jsonEncode(reply ?? {'result': <String, dynamic>{}}), 200);
+    final lines = <String>[
+      for (var i = 0; i < pendingLines; i++) jsonEncode({'pending': true}),
+      jsonEncode(finalLine ?? {'result': <String, dynamic>{}}),
+    ];
+    return http.StreamedResponse(
+      Stream.fromIterable(lines.map((l) => utf8.encode('$l\n'))),
+      200,
+    );
   });
 }
 
@@ -462,11 +470,12 @@ void main() {
   });
 
   group('structured json calls', () {
-    test('reads the result out of a plain reply', () async {
+    test('skips heartbeat lines and reads the final result', () async {
       final s = GeminiSummarizer(
         config,
         client: fakeJson(
-          reply: {
+          pendingLines: 2,
+          finalLine: {
             'model': 'gemini-2.5-flash',
             'result': {
               'entries': [
@@ -482,7 +491,28 @@ void main() {
       expect(schedule.entries.first.title, 'فيزياء');
     });
 
-    test('an HTTP-level failure surfaces the matching message', () async {
+    test('an error line carrying a status maps to the same message an HTTP status would',
+        () async {
+      final s = GeminiSummarizer(
+        config,
+        client: fakeJson(
+          finalLine: {
+            'error': 'Gemini returned 429',
+            'detail': 'limit: 20',
+            'status': 429,
+          },
+        ),
+      );
+
+      await expectLater(
+        s.parseSchedule(text: 'جدول'),
+        throwsA(isA<SummarizerException>()
+            .having((e) => e.message, 'message', contains('حصتك'))),
+      );
+    });
+
+    test('an HTTP-level failure before the stream opens still surfaces normally',
+        () async {
       final s = GeminiSummarizer(config, client: fakeJson(status: 503));
 
       await expectLater(
