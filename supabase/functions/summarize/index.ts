@@ -788,18 +788,29 @@ Deno.serve(async (req: Request) => {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
       const files = body.files ?? (body.file ? [body.file] : undefined);
       // نداءات الملفات (جدول، تحليل شكل) قيسناها حقيقي: موديل واحد بيرد في
-      // ~117 ثانية، لكن لو الأول فشل وعدّى لتاني، ده وحده وصل لـ ~126
-      // ثانية — قريب جدًا من حد الـ 150. الوقوع في موديل تاني معناه ضياع
-      // وقت المحاولة الأولى فوق وقت التانية، فبقينا على مرشّح واحد بس:
-      // لو فشل الأول برجع خطأ واضح بسرعة بدل ما أخاطر بمحاولة تانية بطيئة.
+      // ~117 ثانية، لكن لو الأول فشل وعدّى لتاني **بعد ما استهلك وقته
+      // بمحاولة حقيقية بطيئة**، ده وحده وصل لـ ~126 ثانية — قريب جدًا من حد
+      // الـ 150. الخطر ده خاص بمحاولتين بطيئتين ورا بعض، مش برفض سريع
+      // (404 لموديل مش متاح للمفتاح، أو 429 حصته خلصت) اللي بيرجع فورًا من
+      // غير ما ياخد وقت حقيقي. فبنسيب مرشّح واحد بس عادةً، وبنسمح باتنين
+      // بس لما `preferPro` مفعّلة — موديلات pro مش دايمًا متاحة لكل مفتاح
+      // مجاني، فلو الأول (pro) اترفض فورًا، التاني (flash غالبًا) بياخد
+      // نفس الوقت وكأنه المحاولة الأولى، من غير ما يضيف وقت حقيقي فوقه.
       // File-bearing calls (schedule, style analysis) were measured for
       // real: one model answers in ~117s, but falling back to a second
-      // candidate alone took ~126s — uncomfortably close to the 150s
-      // ceiling. Losing time on a first attempt before trying a second means
-      // stacking both durations, so this stays at a single candidate: if it
-      // fails, return a clear error quickly instead of risking a slow
-      // fallback that runs out the clock.
-      const jsonMaxCandidates = files?.length ? 1 : 5;
+      // candidate **after it burned its own time on a real slow attempt**
+      // alone took ~126s — uncomfortably close to the 150s ceiling. That
+      // risk is specific to two slow attempts stacking, not to a fast
+      // rejection (404 for a model unavailable to this key, or 429 spent
+      // quota) which returns immediately without spending real time. So
+      // this stays at one candidate normally, but allows two when
+      // `preferPro` is set — pro models are not always available on a free
+      // key, and if the first (pro) is rejected outright, the second
+      // (usually flash) costs the same as if it had been tried first, with
+      // no real time added on top.
+      const jsonMaxCandidates = files?.length
+          ? (body.prefer_pro === true ? 2 : 1)
+          : 5;
       const jsonMaxAttempts = files?.length ? 1 : 3;
       return await generateJson(
         apiKey,
