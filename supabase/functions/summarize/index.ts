@@ -407,17 +407,26 @@ async function fileState(apiKey: string, name: string): Promise<Response> {
 /// بيطلب رد JSON منظم من Gemini ويرجّعه كما هو.
 /// Asks Gemini for one structured JSON reply and passes it straight back.
 ///
-/// الردود المنظمة مش بتستفيد من البث — JSON نصّه مش مفيد قبل ما يكتمل — فبناخدها
-/// دفعة واحدة بدل ما نعقّد الطرفين.
-/// Structured replies gain nothing from streaming: half a JSON document is
-/// useless, so we take it in one piece instead of complicating both ends.
-async function generateJson(
+/// الرد لسه مش بيتبعت جزء جزء — نص JSON مش مفيد قبل ما يكتمل. لكن النداء ده
+/// مش بث عند جوجل، فبيفضل ساكت لحد ما يخلص، ومستند كذا صفحة ممكن ياخد وقت
+/// طويل. الاتصال بيتقفل من غير سبب لو فضل ساكت أكتر من حد الخمول عند
+/// Supabase (كان بيرجّع "IDLE_TIMEOUT" بعد 150 ثانية). فبنبعت NDJSON زي
+/// التلخيص العادي — سطر بينج كل شوية لحد ما جوجل يرد، وآخر سطر فيه النتيجة
+/// أو الخطأ.
+/// The reply itself still isn't sent in pieces — half a JSON document is
+/// useless. But this call is not a stream at Google's end, so the connection
+/// sits silent until it finishes, and a multi-page document can take a
+/// while. Supabase's own idle limit was closing the connection for no real
+/// reason ("IDLE_TIMEOUT" after 150s). So this emits NDJSON like the plain
+/// summary does: a heartbeat line every so often while waiting on Google,
+/// and a final line carrying the result or the error.
+function generateJson(
   apiKey: string,
   candidates: string[],
   system: string,
   prompt: string,
   files?: RequestFile[],
-): Promise<Response> {
+): Response {
   const parts = fileParts(files);
   parts.push({ text: prompt });
 
@@ -427,37 +436,79 @@ async function generateJson(
     generationConfig: { temperature: 0.3, responseMimeType: "application/json" },
   });
 
-  const picked = await firstWorking(
-    candidates,
-    (model) =>
-      fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      }),
-  );
+  const encoder = new TextEncoder();
 
-  if (!picked.attempt.response?.ok) return retryFailure(picked.attempt);
-  const upstream = picked.attempt.response;
-  const model = picked.model;
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
 
-  const data = await upstream.json();
-  const text = data?.candidates?.[0]?.content?.parts
-    ?.map((p: { text?: string }) => p.text ?? "")
-    .join("") ?? "";
+      const heartbeat = setInterval(() => emit({ pending: true }), 20_000);
 
-  const blocked = data?.promptFeedback?.blockReason;
-  if (blocked) return json({ error: `Gemini رفض المحتوى (${blocked}).` }, 422);
+      try {
+        const picked = await firstWorking(
+          candidates,
+          (model) =>
+            fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            }),
+        );
 
-  try {
-    // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل للتطبيق
-    // ويكسره وهو بيحاول يقراه.
-    // Parsed here so a non-JSON reply surfaces as a clear error instead of
-    // reaching the app and breaking it mid-read.
-    return json({ result: JSON.parse(text), model });
-  } catch {
-    return json({ error: "الموديل رجّع رد مش JSON.", detail: text.slice(0, 400) }, 502);
-  }
+        if (!picked.attempt.response?.ok) {
+          const status = picked.attempt.response?.status || 502;
+          emit({
+            error: `Gemini returned ${status}`,
+            detail: picked.attempt.errorBody || "no response",
+            status,
+          });
+          return;
+        }
+
+        const upstream = picked.attempt.response;
+        const model = picked.model;
+
+        const data = await upstream.json();
+        const text = data?.candidates?.[0]?.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? "")
+          .join("") ?? "";
+
+        const blocked = data?.promptFeedback?.blockReason;
+        if (blocked) {
+          emit({ error: `Gemini رفض المحتوى (${blocked}).`, status: 422 });
+          return;
+        }
+
+        try {
+          // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل
+          // للتطبيق ويكسره وهو بيحاول يقراه.
+          // Parsed here so a non-JSON reply surfaces as a clear error instead
+          // of reaching the app and breaking it mid-read.
+          emit({ result: JSON.parse(text), model });
+        } catch {
+          emit({
+            error: "الموديل رجّع رد مش JSON.",
+            detail: text.slice(0, 400),
+            status: 502,
+          });
+        }
+      } catch (e) {
+        emit({ error: `${e}`, status: 500 });
+      } finally {
+        clearInterval(heartbeat);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      ...CORS_HEADERS,
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache",
+    },
+  });
 }
 
 /// بيبث التلخيص من Gemini للتطبيق على شكل NDJSON.

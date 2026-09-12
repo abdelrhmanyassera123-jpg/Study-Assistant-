@@ -96,6 +96,30 @@ http.Client fakeFunction(
   });
 }
 
+/// بيقلّد رد نداءات JSON (كروت/امتحان/جدول): NDJSON ببينج اختياري وسطر أخير.
+/// Fakes a structured-json reply (cards/exam/schedule): NDJSON with optional
+/// heartbeats and one final line.
+http.Client fakeJson({
+  int status = 200,
+  String errorBody = '{"error":"nope"}',
+  int pendingLines = 0,
+  Map<String, dynamic>? finalLine,
+}) {
+  return MockClient.streaming((request, bodyStream) async {
+    if (status != 200) {
+      return http.StreamedResponse(Stream.value(utf8.encode(errorBody)), status);
+    }
+    final lines = <String>[
+      for (var i = 0; i < pendingLines; i++) jsonEncode({'pending': true}),
+      jsonEncode(finalLine ?? {'result': <String, dynamic>{}}),
+    ];
+    return http.StreamedResponse(
+      Stream.fromIterable(lines.map((l) => utf8.encode('$l\n'))),
+      200,
+    );
+  });
+}
+
 void main() {
   group('streaming', () {
     test('joins the chunks into the full summary', () async {
@@ -442,6 +466,65 @@ void main() {
 
       expect(prompt, isNot(contains('مثال 1')));
       expect(prompt, contains('محتوى'));
+    });
+  });
+
+  group('structured json calls', () {
+    // نداء JSON (زي الجدول والكروت) بيوصل NDJSON دلوقتي بدل رد واحد، عشان
+    // الاتصال ما يتقفلش وهو مستني رد Gemini الطويل على مستند كذا صفحة.
+    // A JSON call (like the schedule or cards) now arrives as NDJSON instead
+    // of one reply, so the connection stays open while a multi-page document
+    // keeps Gemini busy.
+    test('skips heartbeat lines and reads the final result', () async {
+      final s = GeminiSummarizer(
+        config,
+        client: fakeJson(
+          pendingLines: 2,
+          finalLine: {
+            'model': 'gemini-2.5-flash',
+            'result': {
+              'entries': [
+                {'title': 'فيزياء', 'day': 'الأحد', 'start': '10:00', 'end': '12:00'},
+              ],
+            },
+          },
+        ),
+      );
+
+      final schedule = await s.parseSchedule(text: 'جدول');
+      expect(schedule.entries, hasLength(1));
+      expect(schedule.entries.first.title, 'فيزياء');
+    });
+
+    test('an error line carrying a status maps to the same message an HTTP status would',
+        () async {
+      final s = GeminiSummarizer(
+        config,
+        client: fakeJson(
+          finalLine: {
+            'error': 'Gemini returned 429',
+            'detail': 'limit: 20',
+            'status': 429,
+          },
+        ),
+      );
+
+      await expectLater(
+        s.parseSchedule(text: 'جدول'),
+        throwsA(isA<SummarizerException>()
+            .having((e) => e.message, 'message', contains('حصتك'))),
+      );
+    });
+
+    test('an HTTP-level failure before the stream opens still surfaces normally',
+        () async {
+      final s = GeminiSummarizer(config, client: fakeJson(status: 503));
+
+      await expectLater(
+        s.parseSchedule(text: 'جدول'),
+        throwsA(isA<SummarizerException>()
+            .having((e) => e.message, 'message', contains('مزحوم'))),
+      );
     });
   });
 }
