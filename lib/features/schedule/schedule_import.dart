@@ -57,13 +57,20 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
 
   Future<void> _pickImages() async {
     try {
-      final files = await pickLocalFiles(extensions: ['png', 'jpg', 'jpeg', 'webp']);
+      final files = await pickLocalFiles(
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'pdf'],
+      );
       if (files.isEmpty || !mounted) return;
 
-      final shrunk = <LectureFile>[];
+      final picked = <LectureFile>[];
       for (final file in files) {
-        final small = await shrinkImage(file);
-        shrunk.add(LectureFile(
+        // الـ PDF بيتبعت زي ما هو — `shrinkImage` بترجّعه من غير تغيير لأنه
+        // مش قادر يفكه كـ bitmap، لكن بنجنّب المحاولة أصلاً.
+        // A PDF is sent as-is — `shrinkImage` would hand it back unchanged
+        // since it cannot decode it as a bitmap, but skip the attempt outright.
+        final small =
+            file.mimeType == 'application/pdf' ? file : await shrinkImage(file);
+        picked.add(LectureFile(
           name: small.name,
           mimeType: small.mimeType,
           bytes: small.bytes,
@@ -71,7 +78,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
       }
       if (!mounted) return;
       setState(() {
-        _images.addAll(shrunk);
+        _images.addAll(picked);
         _error = null;
       });
     } catch (e) {
@@ -211,7 +218,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
                   const SizedBox(height: Insets.lg),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _pickImages,
-                    icon: const Icon(Icons.image_outlined, size: 19),
+                    icon: const Icon(Icons.upload_file_outlined, size: 19),
                     label: Text(l.orUploadPhoto),
                   ),
                   if (_images.isNotEmpty) ...[
@@ -221,8 +228,13 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
                         padding: const EdgeInsets.only(bottom: Insets.sm),
                         child: Row(
                           children: [
-                            Icon(Icons.image_rounded,
-                                size: 18, color: scheme.primary),
+                            Icon(
+                              image.mimeType == 'application/pdf'
+                                  ? Icons.picture_as_pdf_rounded
+                                  : Icons.image_rounded,
+                              size: 18,
+                              color: scheme.primary,
+                            ),
                             const SizedBox(width: Insets.md),
                             Expanded(
                               child: Text(

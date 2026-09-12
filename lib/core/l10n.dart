@@ -364,8 +364,8 @@ class AppL10n {
   String get day => _('اليوم', 'Day');
   String get noScheduleYet => _('مفيش جدول لسه', 'No timetable yet');
   String get scheduleEmptyHint => _(
-        'الزق جدول الكلية أو ارفع صورته، والباقي عليّا.',
-        'Paste your college timetable or upload a photo of it; I will do the rest.',
+        'الزق جدول الكلية أو ارفع صورته أو PDF بتاعه، والباقي عليّا.',
+        'Paste your college timetable or upload a photo or PDF of it; I will do the rest.',
       );
   String get noLecturesToday =>
       _('مفيش محاضرات النهاردة', 'No lectures today');
@@ -373,14 +373,17 @@ class AppL10n {
   // الاستيراد بالذكاء الاصطناعي / the AI import
   String get importSchedule => _('استورد جدولك', 'Import timetable');
   String get importScheduleHint => _(
-        'الزق الجدول زي ما هو أو ارفع صورته — التطبيق هيرتّبه.',
-        'Paste the timetable as it is or upload a photo; the app will lay it out.',
+        'الزق الجدول زي ما هو أو ارفع صورته أو PDF بتاعه (لو كذا صفحة، ارفعهم '
+            'كلهم) — التطبيق هيرتّبه.',
+        'Paste the timetable as it is or upload a photo or PDF of it (upload '
+            'every page if it spans a few); the app will lay it out.',
       );
   String get pasteSchedule => _(
         'الزق الجدول هنا... (أي شكل: جدول الكلية، رسالة، صورة مكتوبة)',
         'Paste the timetable here — any shape it came in',
       );
-  String get orUploadPhoto => _('أو ارفع صورة الجدول', 'or upload a photo of it');
+  String get orUploadPhoto =>
+      _('أو ارفع صورة الجدول أو ملف PDF بتاعه', 'or upload a photo or PDF of it');
   /// السؤال اللي بيتسأل لما الجدول يبقى فيه أكتر من قسم.
   /// The question asked when a timetable holds more than one section.
   String whichGroup(String label) {
