@@ -316,9 +316,18 @@ abstract class Summarizer {
   /// A timetable arrives in endless shapes: a college table, a photo from
   /// WhatsApp, a hastily typed message. Underneath they are all the same data:
   /// a day, a time and a room.
+  ///
+  /// [onProgress] بيتنادى بنسبة تقريبية (0 لـ 1) — مفيش تقدّم حقيقي لنداء
+  /// جوجل نفسه (رد واحد مش بث)، فالنسبة مبنية على الرفع الحقيقي زائد بينج
+  /// الانتظار، عشان الشريط يتحرك بدل ما يقف ساكت دقيقة ونص.
+  /// [onProgress] is called with a rough fraction (0 to 1) — there is no real
+  /// progress for the Google call itself (one reply, not a stream), so the
+  /// fraction is built from real upload progress plus the wait's heartbeat,
+  /// so the bar moves instead of sitting frozen for a minute and a half.
   Future<ParsedSchedule> parseSchedule({
     String text,
     List<LectureFile> images,
+    void Function(double fraction)? onProgress,
   });
 
   /// بيحلل صورة من كراسة المستخدم ويرجّع شكل صفحته ونص تلخيصها.

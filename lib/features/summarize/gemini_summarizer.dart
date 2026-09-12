@@ -695,6 +695,7 @@ class GeminiSummarizer implements Summarizer {
   Future<ParsedSchedule> parseSchedule({
     String text = '',
     List<LectureFile> images = const [],
+    void Function(double fraction)? onProgress,
   }) async {
     _requireSignIn();
     _requireFitting(images);
@@ -715,18 +716,44 @@ class GeminiSummarizer implements Summarizer {
     // requests sharing the same warm function at the same time. Uploading
     // streams through without ever gathering bytes in memory, so it stays
     // safe under load regardless of file size.
-    final uploads = <UploadedFile>[];
-    for (final file in images) {
-      uploads.add(await upload(file));
-    }
+    //
+    // الرفع ياخد جزء من الشريط لو في ملفات (تقدّم حقيقي بالبايت)، والباقي —
+    // وهو الأطول بمراحل، مستند معقد بياخد دقيقة ودقيقتين — بيتحرك مع كل
+    // بينج من `_postJson` من غير ما يوصل النهاية أبدًا قبل ما الرد يوصل
+    // فعلاً، عشان الشريط يفضل صادق مهما طال الانتظار.
+    // Uploads take a slice of the bar when there are files (real byte
+    // progress); the rest — the much longer part, a minute or two for a
+    // complex document — moves with each heartbeat from `_postJson` without
+    // ever reaching the end before the reply actually arrives, so the bar
+    // stays honest no matter how long the wait runs.
+    final uploadShare = images.isEmpty ? 0.0 : 0.25;
 
-    final result = await _postJson({
-      'action': 'json',
-      'model': config.requestedModel,
-      'system': StudyPrompt.scheduleSystem,
-      'prompt': StudyPrompt.schedulePrompt(text),
-      if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
-    });
+    final uploads = <UploadedFile>[];
+    for (var i = 0; i < images.length; i++) {
+      uploads.add(await upload(
+        images[i],
+        onProgress: (fraction) =>
+            onProgress?.call(uploadShare * (i + fraction) / images.length),
+      ));
+    }
+    onProgress?.call(uploadShare);
+
+    var pendingCount = 0;
+    final result = await _postJson(
+      {
+        'action': 'json',
+        'model': config.requestedModel,
+        'system': StudyPrompt.scheduleSystem,
+        'prompt': StudyPrompt.schedulePrompt(text),
+        if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
+      },
+      onPending: () {
+        pendingCount++;
+        final waitFraction = 1 - 1 / (pendingCount + 1);
+        onProgress?.call(uploadShare + (1 - uploadShare) * waitFraction);
+      },
+    );
+    onProgress?.call(1);
 
     final parsed = decodeModelJson(result);
     final rows = parsed?['entries'];
@@ -796,7 +823,10 @@ class GeminiSummarizer implements Summarizer {
   /// and verified locally with a Node server before shipping: bytes arrive
   /// incrementally, and line-splitting holds up even when several lines land
   /// in one packet.
-  Future<Object?> _postJson(Map<String, dynamic> payload) async {
+  Future<Object?> _postJson(
+    Map<String, dynamic> payload, {
+    void Function()? onPending,
+  }) async {
     if (config.accessToken.isEmpty) {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
@@ -843,7 +873,10 @@ class GeminiSummarizer implements Summarizer {
           continue;
         }
 
-        if (chunk['pending'] == true) continue;
+        if (chunk['pending'] == true) {
+          onPending?.call();
+          continue;
+        }
 
         final error = chunk['error'];
         if (error != null) {

@@ -47,6 +47,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
   final Set<int> _dropped = {};
   bool _busy = false;
   bool _saving = false;
+  double _progress = 0;
   SummarizerException? _error;
 
   @override
@@ -92,6 +93,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
       _error = null;
       _read = null;
       _group = null;
+      _progress = 0;
       _dropped.clear();
     });
 
@@ -99,6 +101,9 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
       final schedule = await ref.read(activeSummarizerProvider).parseSchedule(
             text: _text.text,
             images: _images,
+            onProgress: (fraction) {
+              if (mounted) setState(() => _progress = fraction);
+            },
           );
       if (mounted) {
         setState(() {
@@ -266,7 +271,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
                   ),
                   if (_busy) ...[
                     const SizedBox(height: Insets.md),
-                    const LinearProgressIndicator(),
+                    ProgressBar(label: l.readingSchedule, value: _progress),
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: Insets.lg),
