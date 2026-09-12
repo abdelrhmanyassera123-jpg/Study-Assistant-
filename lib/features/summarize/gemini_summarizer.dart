@@ -743,13 +743,14 @@ class GeminiSummarizer implements Summarizer {
       {
         'action': 'json',
         'model': config.requestedModel,
-        // جدول كثيف محتاج قراية دقيقة لشبكة أعمدة صغيرة أهم من سرعة الرد —
-        // متجاهلة لو المستخدم اختار موديل بعينه (الاسم بياخد الأولوية على
-        // السيرفر أصلاً).
-        // A dense timetable needs precise reading of a small column grid more
-        // than a fast reply — ignored when the user picked a specific model
-        // (the name already takes priority on the server).
-        'prefer_pro': true,
+        // جرّبنا تفضيل pro لدقّة قراية الأعمدة، لكن حصته المجانية صغيرة
+        // جدًا وبتخلص من أول كام تجربة — رجعنا لـ flash العادي واعتمدنا على
+        // تعليمات الـ prompt (schedulePrompt/scheduleSystem) بدل الاعتماد
+        // على موديل أقوى.
+        // Tried preferring pro for column-reading accuracy, but its free
+        // quota is tiny and runs out after a handful of tries — reverted to
+        // the regular flash ranking and rely on the prompt instructions
+        // (schedulePrompt/scheduleSystem) instead of a stronger model.
         'system': StudyPrompt.scheduleSystem,
         'prompt': StudyPrompt.schedulePrompt(text),
         if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
