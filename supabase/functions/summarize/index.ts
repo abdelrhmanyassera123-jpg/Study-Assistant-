@@ -756,20 +756,27 @@ Deno.serve(async (req: Request) => {
     if (body.action === "json") {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
       const files = body.files ?? (body.file ? [body.file] : undefined);
+      // نداءات الملفات (جدول، تحليل شكل) قيسناها حقيقي: موديل واحد بيرد في
+      // ~117 ثانية، لكن لو الأول فشل وعدّى لتاني، ده وحده وصل لـ ~126
+      // ثانية — قريب جدًا من حد الـ 150. الوقوع في موديل تاني معناه ضياع
+      // وقت المحاولة الأولى فوق وقت التانية، فبقينا على مرشّح واحد بس:
+      // لو فشل الأول برجع خطأ واضح بسرعة بدل ما أخاطر بمحاولة تانية بطيئة.
+      // File-bearing calls (schedule, style analysis) were measured for
+      // real: one model answers in ~117s, but falling back to a second
+      // candidate alone took ~126s — uncomfortably close to the 150s
+      // ceiling. Losing time on a first attempt before trying a second means
+      // stacking both durations, so this stays at a single candidate: if it
+      // fails, return a clear error quickly instead of risking a slow
+      // fallback that runs out the clock.
+      const jsonMaxCandidates = files?.length ? 1 : 5;
+      const jsonMaxAttempts = files?.length ? 1 : 3;
       return await generateJson(
         apiKey,
-        // نداءات الملفات (جدول، تحليل شكل) أبطأ من النص العادي. أقل موديلات
-        // وبلا إعادة محاولة يخلّي مجموع الوقت بعيد عن حد الخمول عند
-        // Supabase (150 ثانية)، حتى لو أول موديلين مشغولين.
-        // File-bearing calls (schedule, style analysis) are slower than plain
-        // text. Fewer candidates and no retries keep the total time well
-        // clear of Supabase's idle limit (150s), even if the first couple of
-        // models are busy.
-        await candidatesFor(apiKey, body.model, files?.length ? 3 : 5),
+        await candidatesFor(apiKey, body.model, jsonMaxCandidates),
         body.system ?? "",
         body.prompt,
         files,
-        files?.length ? 1 : 3,
+        jsonMaxAttempts,
       );
     }
 
