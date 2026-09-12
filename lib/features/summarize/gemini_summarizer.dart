@@ -702,16 +702,24 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('محطتش جدول ولا صورة.');
     }
 
+    // جدول كذا صفحة PDF بيعدي 3 ميجا بسهولة، وترميزه base64 جوه الطلب كان
+    // بيخلّي الفنكشن تخلّص ذاكرتها (546). الملف الكبير بيترفع الأول زي أي
+    // مسار تاني.
+    // A multi-page PDF timetable easily passes 3 MB, and base64-ing it inside
+    // the request was running the function out of memory (546). A large file
+    // uploads first, same as every other path.
+    final inline = images.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in images.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
+    }
+
     final result = await _postJson({
       'action': 'json',
       'model': config.requestedModel,
       'system': StudyPrompt.scheduleSystem,
       'prompt': StudyPrompt.schedulePrompt(text),
-      if (images.isNotEmpty)
-        'files': [
-          for (final image in images)
-            {'mime_type': image.mimeType, 'data': base64Encode(image.bytes)},
-        ],
+      if (images.isNotEmpty) 'files': _fileParts(inline, uploads),
     });
 
     final parsed = decodeModelJson(result);
