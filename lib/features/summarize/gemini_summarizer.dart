@@ -726,7 +726,13 @@ class GeminiSummarizer implements Summarizer {
     // complex document — moves with each heartbeat from `_postJson` without
     // ever reaching the end before the reply actually arrives, so the bar
     // stays honest no matter how long the wait runs.
-    final uploadShare = images.isEmpty ? 0.0 : 0.25;
+    final uploadShare = images.isEmpty ? 0.0 : 0.2;
+    // باقي الشريط بعد الرفع مقسوم بين مرحلتين: اكتشاف التركيب (أخف بكتير)
+    // واستخراج المحاضرات (الأتقل، وده اللي بياخد معظم الوقت).
+    // The rest of the bar after upload splits across two phases: structure
+    // discovery (much lighter) and entry extraction (the heavy one, taking
+    // most of the time).
+    final structureEnd = uploadShare + (1 - uploadShare) * 0.25;
 
     final uploads = <UploadedFile>[];
     for (var i = 0; i < images.length; i++) {
@@ -738,44 +744,74 @@ class GeminiSummarizer implements Summarizer {
     }
     onProgress?.call(uploadShare);
 
+    final files = images.isNotEmpty ? _fileParts(const [], uploads) : null;
+
+    // مرحلة 1: اكتشاف تركيب الجدول بس (أعمدة الوقت والأقسام) — مهمة أصغر
+    // بكتير من استخراج كل المحاضرات، وأدق لأنها مش شايلة كل حاجة مرة واحدة.
+    // Phase 1: discover just the table's structure (time columns, sections)
+    // — a much smaller task than extracting every lecture, and more accurate
+    // for not carrying everything at once.
     var pendingCount = 0;
-    final result = await _postJson(
+    final structureResult = await _postJson(
       {
         'action': 'json',
         'model': config.requestedModel,
-        // جرّبنا تفضيل pro لدقّة قراية الأعمدة، لكن حصته المجانية صغيرة
-        // جدًا وبتخلص من أول كام تجربة — رجعنا لـ flash العادي واعتمدنا على
-        // تعليمات الـ prompt (schedulePrompt/scheduleSystem) بدل الاعتماد
-        // على موديل أقوى.
-        // Tried preferring pro for column-reading accuracy, but its free
-        // quota is tiny and runs out after a handful of tries — reverted to
-        // the regular flash ranking and rely on the prompt instructions
-        // (schedulePrompt/scheduleSystem) instead of a stronger model.
-        'system': StudyPrompt.scheduleSystem,
-        'prompt': StudyPrompt.schedulePrompt(text),
-        if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
+        'system': StudyPrompt.scheduleStructureSystem,
+        'prompt': StudyPrompt.scheduleStructurePrompt(text),
+        if (files != null) 'files': files,
       },
       onPending: () {
         pendingCount++;
         final waitFraction = 1 - 1 / (pendingCount + 1);
-        onProgress?.call(uploadShare + (1 - uploadShare) * waitFraction);
+        onProgress?.call(uploadShare + (structureEnd - uploadShare) * waitFraction);
       },
     );
-    onProgress?.call(1);
+    onProgress?.call(structureEnd);
 
-    final parsed = decodeModelJson(result);
-    final rows = parsed?['entries'];
-    if (rows is! List) {
-      throw const SummarizerException('الجدول رجع بشكل مش مفهوم.');
-    }
+    final structure = decodeModelJson(structureResult);
+    final timeColumns = <String>[
+      for (final c in (structure?['time_columns'] as List?) ?? const [])
+        '$c'.trim(),
+    ]..removeWhere((c) => c.isEmpty);
 
     final groups = <String>[];
-    final rawGroups = parsed?['groups'];
+    final rawGroups = structure?['groups'];
     if (rawGroups is List) {
       for (final g in rawGroups) {
         final name = '$g'.trim();
         if (name.isNotEmpty && !groups.contains(name)) groups.add(name);
       }
+    }
+    final groupLabel = '${structure?['group_label'] ?? ''}'.trim();
+
+    // مرحلة 2: استخراج المحاضرات، شايلة تركيب المرحلة الأولى كحقيقة مؤكدة.
+    // Phase 2: extract the lectures, carrying phase one's structure as an
+    // established fact.
+    pendingCount = 0;
+    final entriesResult = await _postJson(
+      {
+        'action': 'json',
+        'model': config.requestedModel,
+        'system': StudyPrompt.scheduleEntriesSystem(
+          timeColumns: timeColumns,
+          groups: groups,
+          groupLabel: groupLabel,
+        ),
+        'prompt': StudyPrompt.scheduleEntriesPrompt(text),
+        if (files != null) 'files': files,
+      },
+      onPending: () {
+        pendingCount++;
+        final waitFraction = 1 - 1 / (pendingCount + 1);
+        onProgress?.call(structureEnd + (1 - structureEnd) * waitFraction);
+      },
+    );
+    onProgress?.call(1);
+
+    final parsed = decodeModelJson(entriesResult);
+    final rows = parsed?['entries'];
+    if (rows is! List) {
+      throw const SummarizerException('الجدول رجع بشكل مش مفهوم.');
     }
 
     // الصف الناقص بيتشال بدل ما يوقف الباقي: جدول فيه 12 محاضرة وواحدة
@@ -814,8 +850,8 @@ class GeminiSummarizer implements Summarizer {
     return ParsedSchedule(
       entries: entries,
       groups: groups,
-      groupLabel: '${parsed?['group_label'] ?? ''}'.trim(),
-      note: '${parsed?['note'] ?? ''}'.trim(),
+      groupLabel: groupLabel,
+      note: '${structure?['note'] ?? ''}'.trim(),
     );
   }
 
