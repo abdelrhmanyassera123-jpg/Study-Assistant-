@@ -702,15 +702,20 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('محطتش جدول ولا صورة.');
     }
 
-    // جدول كذا صفحة PDF بيعدي 3 ميجا بسهولة، وترميزه base64 جوه الطلب كان
-    // بيخلّي الفنكشن تخلّص ذاكرتها (546). الملف الكبير بيترفع الأول زي أي
-    // مسار تاني.
-    // A multi-page PDF timetable easily passes 3 MB, and base64-ing it inside
-    // the request was running the function out of memory (546). A large file
-    // uploads first, same as every other path.
-    final inline = images.where((f) => !f.needsUpload).toList();
+    // كل ملف هنا بيترفع الأول بدل ما يتحط base64 جوه الطلب — حتى الصغير.
+    // مفيش تصغير للـ PDF زي الصور، وحتى ملف مية كيلو حصل يطلّع 546 (الفنكشن
+    // بتخلّص ذاكرتها وهي بتبني جسم الطلب لجوجل)، غالبًا بسبب طلبات تانية
+    // شغالة على نفس الفنكشن الدافية في نفس الوقت. الرفع بيتمرر تمرير من غير
+    // ما يتجمّع في الذاكرة، فبيفضل مأمون تحت أي ضغط.
+    // Every file here uploads first instead of riding as base64 inside the
+    // request — even a small one. PDFs are not shrunk the way images are, and
+    // even a 100 KB file has triggered 546 (the function running out of
+    // memory while building the request to Google), most likely from other
+    // requests sharing the same warm function at the same time. Uploading
+    // streams through without ever gathering bytes in memory, so it stays
+    // safe under load regardless of file size.
     final uploads = <UploadedFile>[];
-    for (final file in images.where((f) => f.needsUpload)) {
+    for (final file in images) {
       uploads.add(await upload(file));
     }
 
@@ -719,7 +724,7 @@ class GeminiSummarizer implements Summarizer {
       'model': config.requestedModel,
       'system': StudyPrompt.scheduleSystem,
       'prompt': StudyPrompt.schedulePrompt(text),
-      if (images.isNotEmpty) 'files': _fileParts(inline, uploads),
+      if (images.isNotEmpty) 'files': _fileParts(const [], uploads),
     });
 
     final parsed = decodeModelJson(result);
