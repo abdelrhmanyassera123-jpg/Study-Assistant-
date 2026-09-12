@@ -106,11 +106,14 @@ interface Attempt {
 /// "Body already consumed" وبتخفي الخطأ الحقيقي ورا خطأ مضلل.
 /// The body is read exactly once and cached: reading a `Response` twice throws
 /// "Body already consumed", burying the real error behind a misleading one.
-async function withRetry(send: () => Promise<Response>): Promise<Attempt> {
+async function withRetry(
+  send: () => Promise<Response>,
+  maxAttempts = 3,
+): Promise<Attempt> {
   let response: Response | null = null;
   let errorBody = "";
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1500));
 
     response = await send();
@@ -138,11 +141,12 @@ async function withRetry(send: () => Promise<Response>): Promise<Attempt> {
 async function firstWorking(
   candidates: string[],
   send: (model: string) => Promise<Response>,
+  maxAttemptsPerModel = 3,
 ): Promise<{ model: string; attempt: Attempt }> {
   let last: Attempt = { response: null, errorBody: "no model available" };
 
   for (const model of candidates) {
-    const attempt = await withRetry(() => send(model));
+    const attempt = await withRetry(() => send(model), maxAttemptsPerModel);
     if (attempt.response?.ok) return { model, attempt };
 
     last = attempt;
@@ -407,26 +411,28 @@ async function fileState(apiKey: string, name: string): Promise<Response> {
 /// بيطلب رد JSON منظم من Gemini ويرجّعه كما هو.
 /// Asks Gemini for one structured JSON reply and passes it straight back.
 ///
-/// الرد لسه مش بيتبعت جزء جزء — نص JSON مش مفيد قبل ما يكتمل. لكن النداء ده
-/// مش بث عند جوجل، فبيفضل ساكت لحد ما يخلص، ومستند كذا صفحة ممكن ياخد وقت
-/// طويل. الاتصال بيتقفل من غير سبب لو فضل ساكت أكتر من حد الخمول عند
-/// Supabase (كان بيرجّع "IDLE_TIMEOUT" بعد 150 ثانية). فبنبعت NDJSON زي
-/// التلخيص العادي — سطر بينج كل شوية لحد ما جوجل يرد، وآخر سطر فيه النتيجة
-/// أو الخطأ.
-/// The reply itself still isn't sent in pieces — half a JSON document is
-/// useless. But this call is not a stream at Google's end, so the connection
-/// sits silent until it finishes, and a multi-page document can take a
-/// while. Supabase's own idle limit was closing the connection for no real
-/// reason ("IDLE_TIMEOUT" after 150s). So this emits NDJSON like the plain
-/// summary does: a heartbeat line every so often while waiting on Google,
-/// and a final line carrying the result or the error.
-function generateJson(
+/// الردود المنظمة مش بتستفيد من البث — JSON نصّه مش مفيد قبل ما يكتمل — فبناخدها
+/// دفعة واحدة بدل ما نعقّد الطرفين. جرّبنا نلفّها في NDJSON ببينج دوري عشان
+/// حد الخمول عند Supabase (كانت بترجع "IDLE_TIMEOUT" بعد 150 ثانية على مستند
+/// كذا صفحة)، بس ده كان بيضيف مسار جديد مش متجرّب واتلخبط في التجربة الحقيقية.
+/// الحل الأبسط والمضمون: تقصير المدة نفسها بدل ما نتحايل عليها — أقل موديلات
+/// وأقل إعادة محاولة لنداءات الملفات، فالمجموع يفضل بعيد عن الحد من الأساس.
+/// Structured replies gain nothing from streaming: half a JSON document is
+/// useless, so we take it in one piece instead of complicating both ends. We
+/// tried wrapping this in NDJSON with a periodic heartbeat to dodge
+/// Supabase's idle limit (it returned "IDLE_TIMEOUT" after 150s on a
+/// multi-page document), but that added an untested new path that broke in
+/// real use. The simpler, dependable fix is shortening the wait itself
+/// instead of working around it: fewer candidate models and fewer retries
+/// for file-bearing calls, so the total stays well clear of the limit.
+async function generateJson(
   apiKey: string,
   candidates: string[],
   system: string,
   prompt: string,
   files?: RequestFile[],
-): Response {
+  maxAttemptsPerModel = 3,
+): Promise<Response> {
   const parts = fileParts(files);
   parts.push({ text: prompt });
 
@@ -436,79 +442,38 @@ function generateJson(
     generationConfig: { temperature: 0.3, responseMimeType: "application/json" },
   });
 
-  const encoder = new TextEncoder();
+  const picked = await firstWorking(
+    candidates,
+    (model) =>
+      fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }),
+    maxAttemptsPerModel,
+  );
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const emit = (obj: unknown) =>
-        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+  if (!picked.attempt.response?.ok) return retryFailure(picked.attempt);
+  const upstream = picked.attempt.response;
+  const model = picked.model;
 
-      const heartbeat = setInterval(() => emit({ pending: true }), 20_000);
+  const data = await upstream.json();
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p: { text?: string }) => p.text ?? "")
+    .join("") ?? "";
 
-      try {
-        const picked = await firstWorking(
-          candidates,
-          (model) =>
-            fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body,
-            }),
-        );
+  const blocked = data?.promptFeedback?.blockReason;
+  if (blocked) return json({ error: `Gemini رفض المحتوى (${blocked}).` }, 422);
 
-        if (!picked.attempt.response?.ok) {
-          const status = picked.attempt.response?.status || 502;
-          emit({
-            error: `Gemini returned ${status}`,
-            detail: picked.attempt.errorBody || "no response",
-            status,
-          });
-          return;
-        }
-
-        const upstream = picked.attempt.response;
-        const model = picked.model;
-
-        const data = await upstream.json();
-        const text = data?.candidates?.[0]?.content?.parts
-          ?.map((p: { text?: string }) => p.text ?? "")
-          .join("") ?? "";
-
-        const blocked = data?.promptFeedback?.blockReason;
-        if (blocked) {
-          emit({ error: `Gemini رفض المحتوى (${blocked}).`, status: 422 });
-          return;
-        }
-
-        try {
-          // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل
-          // للتطبيق ويكسره وهو بيحاول يقراه.
-          // Parsed here so a non-JSON reply surfaces as a clear error instead
-          // of reaching the app and breaking it mid-read.
-          emit({ result: JSON.parse(text), model });
-        } catch {
-          emit({
-            error: "الموديل رجّع رد مش JSON.",
-            detail: text.slice(0, 400),
-            status: 502,
-          });
-        }
-      } catch (e) {
-        emit({ error: `${e}`, status: 500 });
-      } finally {
-        clearInterval(heartbeat);
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      ...CORS_HEADERS,
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache",
-    },
-  });
+  try {
+    // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل للتطبيق
+    // ويكسره وهو بيحاول يقراه.
+    // Parsed here so a non-JSON reply surfaces as a clear error instead of
+    // reaching the app and breaking it mid-read.
+    return json({ result: JSON.parse(text), model });
+  } catch {
+    return json({ error: "الموديل رجّع رد مش JSON.", detail: text.slice(0, 400) }, 502);
+  }
 }
 
 /// بيبث التلخيص من Gemini للتطبيق على شكل NDJSON.
@@ -644,13 +609,18 @@ async function streamSummary(
 /// التلقائي.
 /// Decides which models to try: one named model, or the ranked list in auto
 /// mode.
-async function candidatesFor(apiKey: string, model?: string): Promise<string[]> {
+async function candidatesFor(
+  apiKey: string,
+  model?: string,
+  limit = 5,
+): Promise<string[]> {
   if (model && model != "auto") return [model];
 
-  // بنقف عند 5: بعد كده الانتظار بيبقى أطول من فايدته للمستخدم.
-  // Capped at five: past that the wait costs the user more than it buys.
+  // بنقف عند الحد المطلوب: بعد كده الانتظار بيبقى أطول من فايدته للمستخدم.
+  // Capped at the requested limit: past that the wait costs the user more
+  // than it buys.
   const ranked = await rankedModels(apiKey);
-  return ranked.slice(0, 5);
+  return ranked.slice(0, limit);
 }
 
 Deno.serve(async (req: Request) => {
@@ -732,12 +702,21 @@ Deno.serve(async (req: Request) => {
 
     if (body.action === "json") {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
+      const files = body.files ?? (body.file ? [body.file] : undefined);
       return await generateJson(
         apiKey,
-        await candidatesFor(apiKey, body.model),
+        // نداءات الملفات (جدول، تحليل شكل) أبطأ من النص العادي. أقل موديلات
+        // وبلا إعادة محاولة يخلّي مجموع الوقت بعيد عن حد الخمول عند
+        // Supabase (150 ثانية)، حتى لو أول موديلين مشغولين.
+        // File-bearing calls (schedule, style analysis) are slower than plain
+        // text. Fewer candidates and no retries keep the total time well
+        // clear of Supabase's idle limit (150s), even if the first couple of
+        // models are busy.
+        await candidatesFor(apiKey, body.model, files?.length ? 3 : 5),
         body.system ?? "",
         body.prompt,
-        body.files ?? (body.file ? [body.file] : undefined),
+        files,
+        files?.length ? 1 : 3,
       );
     }
 

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -786,28 +785,19 @@ class GeminiSummarizer implements Summarizer {
 
   /// نداء واحد بيرجّع JSON — مشترك بين التحليل والتلخيص المنظم.
   /// One JSON-returning call, shared by the analysis and the structured summary.
-  ///
-  /// الرد NDJSON مش رد واحد: الفنكشن بترجّع رد Gemini الكامل مرة واحدة، لكنها
-  /// بتفضل ساكتة لحد ما توصله، وده كان بيضرب حد الخمول عند Supabase على
-  /// مستندات كذا صفحة. سطر بينج كل شوية بيخلي الاتصال ما يتقفلش، وآخر سطر
-  /// فيه النتيجة أو الخطأ.
-  /// The reply is NDJSON, not one shot: the function still returns Google's
-  /// whole reply in one piece, but it sits silent until it arrives, which was
-  /// tripping Supabase's idle limit on multi-page documents. A heartbeat
-  /// every so often keeps the connection alive, and the final line carries
-  /// the result or the error.
   Future<Object?> _postJson(Map<String, dynamic> payload) async {
     if (config.accessToken.isEmpty) {
       throw const SummarizerException('لازم تكون مسجّل دخول عشان تستخدم Gemini.');
     }
 
-    final request = http.Request('POST', Uri.parse(config.functionUrl))
-      ..headers.addAll(_headers)
-      ..body = jsonEncode(payload);
-
-    final http.StreamedResponse response;
+    final http.Response response;
     try {
-      response = await _client.send(request).timeout(const Duration(seconds: 30));
+      response = await _client
+          .post(Uri.parse(config.functionUrl),
+              headers: _headers, body: jsonEncode(payload))
+          // التحليل البصري بياخد وقت أطول من التلخيص العادي.
+          // Vision analysis takes longer than a plain summary.
+          .timeout(const Duration(minutes: 3));
     } catch (e) {
       throw SummarizerException(
         'مش قادر أوصل لخدمة التلخيص.',
@@ -816,7 +806,7 @@ class GeminiSummarizer implements Summarizer {
     }
 
     if (response.statusCode != 200) {
-      final body = await response.stream.bytesToString();
+      final body = utf8.decode(response.bodyBytes);
       if (response.statusCode == 429) _learnLimit(body);
       throw SummarizerException(
         _statusMessage(response.statusCode),
@@ -824,53 +814,14 @@ class GeminiSummarizer implements Summarizer {
       );
     }
 
-    final lines = response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        // بينج كل 20 ثانية من عندهم؛ لو خمسين ثانية عدّت من غير حرف يبقى
-        // الاتصال نفسه اتقطع.
-        // Heartbeats arrive every 20s from their side; fifty seconds with
-        // nothing means the connection itself dropped.
-        .timeout(const Duration(seconds: 50));
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final error = body['error'];
+    if (error != null) throw SummarizerException('$error');
 
-    try {
-      await for (final line in lines) {
-        if (line.trim().isEmpty) continue;
+    final answered = body['model'] as String?;
+    if (answered != null && answered.isNotEmpty) onRequest?.call(answered);
 
-        final Map<String, dynamic> chunk;
-        try {
-          chunk = jsonDecode(line) as Map<String, dynamic>;
-        } on FormatException {
-          continue;
-        }
-
-        if (chunk['pending'] == true) continue;
-
-        final error = chunk['error'];
-        if (error != null) {
-          final status = chunk['status'] as int?;
-          final detail = chunk['detail'] as String?;
-          final body = [error, detail].whereType<String>().join('\n');
-          if (status == 429) _learnLimit(body);
-          throw SummarizerException(
-            status != null ? _statusMessage(status) : '$error',
-            hint: status != null ? (_statusHint(status) ?? body) : detail,
-          );
-        }
-
-        final answered = chunk['model'] as String?;
-        if (answered != null && answered.isNotEmpty) onRequest?.call(answered);
-
-        return chunk['result'];
-      }
-    } on TimeoutException {
-      throw const SummarizerException(
-        'خدمة التلخيص ماردتش من زمان.',
-        hint: 'جرب تاني.',
-      );
-    }
-
-    throw const SummarizerException('خدمة التلخيص رجعت رد فاضي.');
+    return body['result'];
   }
 
   String _statusMessage(int status) => switch (status) {
