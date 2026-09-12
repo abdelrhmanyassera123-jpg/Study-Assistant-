@@ -42,7 +42,11 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
 
   /// القسم اللي المستخدم قاله. null معناها لسه ما اختارش.
   /// The section the user named; null means they have not chosen yet.
-  String? _group;
+  String? _section;
+
+  /// المجموعة الفرعية جوه القسم، لو القسم ده متقسم كذا مجموعة.
+  /// The subgroup inside the section, when the section splits into a few.
+  String? _subgroup;
 
   final Set<int> _dropped = {};
   bool _busy = false;
@@ -92,7 +96,8 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
       _busy = true;
       _error = null;
       _read = null;
-      _group = null;
+      _section = null;
+      _subgroup = null;
       _progress = 0;
       _dropped.clear();
     });
@@ -110,7 +115,15 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
           _read = schedule;
           // القسم الواحد مفيش فيه سؤال — الاختيار بيتحط لوحده.
           // With one section there is nothing to ask; the choice sets itself.
-          _group = schedule.groups.length == 1 ? schedule.groups.first : null;
+          if (schedule.groups.length == 1) {
+            final onlySection = schedule.sections.keys.first;
+            final subs = schedule.sections[onlySection]!;
+            _section = onlySection;
+            _subgroup = subs.length == 1 ? subs.first : null;
+          } else {
+            _section = null;
+            _subgroup = null;
+          }
         });
       }
     } on SummarizerException catch (e) {
@@ -122,7 +135,8 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
 
   /// المحاضرات المعروضة دلوقتي: بتاعة قسمك + اللي للكل.
   /// The lectures showing now: your section's plus the ones for everyone.
-  List<ParsedLecture> get _visible => _read?.forGroup(_group) ?? const [];
+  List<ParsedLecture> get _visible =>
+      _read?.forGroup(_section, _subgroup) ?? const [];
 
   Future<void> _save({required bool replace}) async {
     final visible = _visible;
@@ -295,7 +309,7 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
               const SizedBox(height: Insets.lg),
               StepCard(
                 step: 2,
-                done: _group != null,
+                done: _section != null,
                 title: l.whichGroup(read.groupLabel),
                 subtitle: read.note.isEmpty ? l.whichGroupHint : read.note,
                 child: Column(
@@ -305,26 +319,70 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
                       spacing: Insets.sm,
                       runSpacing: Insets.sm,
                       children: [
-                        for (final group in read.groups)
+                        for (final section in read.sections.keys)
                           FilterPill(
-                            label: group,
-                            selected: _group == group,
+                            label: section,
+                            selected: _section == section,
                             onTap: () => setState(() {
-                              _group = group;
+                              _section = section;
+                              _subgroup = null;
                               _dropped.clear();
                             }),
                           ),
                         FilterPill(
                           label: l.allGroups,
-                          selected: _group == null,
+                          selected: _section == null,
                           onTap: () => setState(() {
-                            _group = null;
+                            _section = null;
+                            _subgroup = null;
                             _dropped.clear();
                           }),
                         ),
                       ],
                     ),
-                    if (_group != null) ...[
+                    // القسم المختار ممكن يكون متقسم كذا مجموعة فرعية جواه —
+                    // زي "ب" وجواه "ج1"، "ج2" — فبنسأل عليها لوحدها بعد ما
+                    // القسم الرئيسي يتحدد.
+                    // The chosen section may split into subgroups inside it —
+                    // like "B" holding "C1", "C2" — so we ask about that
+                    // separately once the main section is set.
+                    if (_section != null &&
+                        (read.sections[_section] ?? const [])
+                            .isNotEmpty) ...[
+                      const SizedBox(height: Insets.lg),
+                      Text(
+                        l.whichSubgroup,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: Insets.sm),
+                      Wrap(
+                        spacing: Insets.sm,
+                        runSpacing: Insets.sm,
+                        children: [
+                          for (final subgroup in read.sections[_section]!)
+                            FilterPill(
+                              label: subgroup,
+                              selected: _subgroup == subgroup,
+                              onTap: () => setState(() {
+                                _subgroup = subgroup;
+                                _dropped.clear();
+                              }),
+                            ),
+                          FilterPill(
+                            label: l.allGroups,
+                            selected: _subgroup == null,
+                            onTap: () => setState(() {
+                              _subgroup = null;
+                              _dropped.clear();
+                            }),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (_section != null) ...[
                       const SizedBox(height: Insets.md),
                       Text(
                         l.groupPicked(_visible.length, read.entries.length),

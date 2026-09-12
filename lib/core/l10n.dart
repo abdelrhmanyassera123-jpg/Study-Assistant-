@@ -397,6 +397,13 @@ class AppL10n {
       );
   String get allGroups => _('كلهم', 'All of them');
 
+  /// السؤال اللي بيتسأل لما القسم المختار يبقى فيه مجموعات فرعية جواه.
+  /// The question asked when the chosen section has subgroups inside it.
+  String get whichSubgroup => _(
+        'وانت جوّاه في أنهي مجموعة فرعية؟',
+        'And which subgroup inside it are you in?',
+      );
+
   String groupPicked(int kept, int total) => isAr
       ? 'هيتحفظ $kept من $total محاضرة'
       : '$kept of $total lectures will be saved';

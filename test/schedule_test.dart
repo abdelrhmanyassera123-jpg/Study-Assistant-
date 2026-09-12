@@ -130,6 +130,49 @@ void main() {
         isTrue,
       );
     });
+
+    // "ب" فيه عملي بيتقسم "ب-ج1" و"ب-ج2" بمعادين مختلفين — لازم الاتنين
+    // يفضلوا شعب منفصلة تحت نفس القسم، مش شعب مستقلة زي أي حرف تاني.
+    // "B" splits into a practical with two subgroups "B-C1"/"B-C2" on
+    // different times — both must stay separate groups nested under the
+    // same section, not standalone sections like any other letter.
+    group('nested sections', () {
+      test('subgroups are found under their main section', () {
+        final schedule = ParsedSchedule(
+          entries: [],
+          groups: const ['أ', 'ب', 'ب-ج1', 'ب-ج2'],
+        );
+
+        expect(schedule.sections['أ'], isEmpty);
+        expect(schedule.sections['ب'], unorderedEquals(['ج1', 'ج2']));
+        expect(schedule.sections.containsKey('ب-ج1'), isFalse);
+      });
+
+      test('picking a subgroup keeps its own slot and the shared ones', () {
+        final schedule = ParsedSchedule(
+          entries: [
+            at('ب'), // محاضرة نظرية للقسم كله / a lecture shared by the section
+            at('ب-ج1'),
+            at('ب-ج2'),
+            at('أ-ج1'),
+          ],
+          groups: const ['أ-ج1', 'ب', 'ب-ج1', 'ب-ج2'],
+        );
+
+        final mine = schedule.forGroup('ب', 'ج1');
+        expect(mine, hasLength(2));
+        expect(mine.map((e) => e.group), containsAll(['ب', 'ب-ج1']));
+      });
+
+      test('picking only the section shows every subgroup inside it', () {
+        final schedule = ParsedSchedule(
+          entries: [at('ب'), at('ب-ج1'), at('ب-ج2'), at('أ-ج1')],
+          groups: const ['أ-ج1', 'ب', 'ب-ج1', 'ب-ج2'],
+        );
+
+        expect(schedule.forGroup('ب'), hasLength(3));
+      });
+    });
   });
 
   group('reading a timetable', () {

@@ -213,13 +213,39 @@ class ParsedSchedule {
 
   bool get needsChoice => groups.length > 1;
 
-  /// محاضرات قسم واحد + المحاضرات اللي للكل.
-  /// One section's lectures plus the ones that belong to everyone.
-  List<ParsedLecture> forGroup(String? group) {
-    if (group == null || group.isEmpty) return entries;
-    return entries
-        .where((e) => e.group.isEmpty || e.group == group)
-        .toList();
+  /// بيفصل "A-G1" لقسم رئيسي "A" ومجموعة فرعية "G1"، أو يرجّع القيمة زي ما
+  /// هي كقسم لوحده لو مفيهاش "-" (مفيش تقسيم مستويين).
+  /// Splits "A-G1" into main section "A" and subgroup "G1", or returns the
+  /// value as a standalone section when there is no "-" (no two-level split).
+  static (String, String?) _splitGroup(String raw) {
+    final i = raw.indexOf('-');
+    if (i <= 0) return (raw, null);
+    return (raw.substring(0, i), raw.substring(i + 1));
+  }
+
+  /// الأقسام الرئيسية، وتحت كل واحد المجموعات الفرعية اللي جواه (لو في).
+  /// The main sections, each mapped to the subgroups found inside it (if any).
+  Map<String, List<String>> get sections {
+    final map = <String, List<String>>{};
+    for (final g in groups) {
+      final (section, subgroup) = _splitGroup(g);
+      final subs = map.putIfAbsent(section, () => []);
+      if (subgroup != null && !subs.contains(subgroup)) subs.add(subgroup);
+    }
+    return map;
+  }
+
+  /// محاضرات قسم واحد (ومجموعته الفرعية لو اتحددت) + المحاضرات اللي للكل.
+  /// One section's lectures (and its subgroup, if given) plus the ones that
+  /// belong to everyone.
+  List<ParsedLecture> forGroup(String? section, [String? subgroup]) {
+    if (section == null || section.isEmpty) return entries;
+    return entries.where((e) {
+      if (e.group.isEmpty) return true;
+      final (esection, esubgroup) = _splitGroup(e.group);
+      if (esection != section) return false;
+      return subgroup == null || esubgroup == null || esubgroup == subgroup;
+    }).toList();
   }
 }
 
