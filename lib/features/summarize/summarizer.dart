@@ -218,9 +218,27 @@ class ParsedSchedule {
   /// Splits "A-G1" into main section "A" and subgroup "G1", or returns the
   /// value as a standalone section when there is no "-" (no two-level split).
   static (String, String?) _splitGroup(String raw) {
-    final i = raw.indexOf('-');
-    if (i <= 0) return (raw, null);
-    return (raw.substring(0, i), raw.substring(i + 1));
+    final trimmed = raw.trim();
+    final i = trimmed.indexOf('-');
+    if (i <= 0) return (trimmed, null);
+    final section = trimmed.substring(0, i).trim();
+    final subgroup = trimmed.substring(i + 1).trim();
+    return (section, subgroup.isEmpty ? null : subgroup);
+  }
+
+  /// بيرجّع صيغة تسمح بالمقارنة من غير حساسية لحالة الحروف أو صفر بادئ أو
+  /// حرف "G" ممكن يتلزق أو يتشال — الموديل مش دايمًا بيكرر نفس الصيغة
+  /// بالظبط، خصوصًا لما استخراج المحاضرات بيتقسم على كذا نداء منفصل (يوم
+  /// لكل نداء) وكل نداء ممكن يكتبها شكل شوية مختلف عن التاني.
+  /// A comparable form insensitive to letter case, a leading zero, or a "G"
+  /// that may or may not be attached — the model does not always repeat the
+  /// exact same spelling, especially once entry extraction is split across
+  /// several separate calls (one per day) that can each phrase it slightly
+  /// differently.
+  static String _normalize(String raw) {
+    final digits = RegExp(r'\d+').firstMatch(raw)?.group(0);
+    if (digits != null) return digits.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+    return raw.trim().toLowerCase();
   }
 
   /// الأقسام الرئيسية، وتحت كل واحد المجموعات الفرعية اللي جواه (لو في).
@@ -240,11 +258,14 @@ class ParsedSchedule {
   /// belong to everyone.
   List<ParsedLecture> forGroup(String? section, [String? subgroup]) {
     if (section == null || section.isEmpty) return entries;
+    final wantSection = _normalize(section);
+    final wantSubgroup = subgroup == null ? null : _normalize(subgroup);
     return entries.where((e) {
       if (e.group.isEmpty) return true;
       final (esection, esubgroup) = _splitGroup(e.group);
-      if (esection != section) return false;
-      return subgroup == null || esubgroup == null || esubgroup == subgroup;
+      if (_normalize(esection) != wantSection) return false;
+      if (wantSubgroup == null || esubgroup == null) return true;
+      return _normalize(esubgroup) == wantSubgroup;
     }).toList();
   }
 }
@@ -534,8 +555,9 @@ class StudyPrompt {
             '${timeColumns.join(' | ')}';
     final groupsLine = groups.isEmpty
         ? 'الجدول ده لقسم واحد بس — سيب "group" فاضية في كل محاضرة.'
-        : 'الأقسام **مؤكدة ومتفق عليها بالفعل** (${groupLabel.isEmpty ? "قسم" : groupLabel}): '
-            '${groups.join(' | ')}. حط قسم كل محاضرة في "group" بنفس الصيغة دي بالظبط.';
+        : 'الأقسام **مؤكدة ومتفق عليها بالفعل** (${groupLabel.isEmpty ? "قسم" : groupLabel}) — دي **القايمة المغلقة الوحيدة** المسموح بيها لقيمة "group"، منها بس ومفيش غيرها:\n'
+            '  ${groups.map((g) => '"$g"').join('، ')}\n'
+            '  **حط قسم كل محاضرة بنسخ إحدى القيم دي حرفيًا زي ما هي مكتوبة فوق بالظبط — نفس الحروف الكبيرة/الصغيرة، نفس الشرطة، من غير ما تزود أو تشيل مسافة.** ممنوع تخترع صيغة تانية قريبة (زي تشيل حرف أو رقم أو تضيف صفر) حتى لو شايف إنها بتوصف نفس القسم.';
     final timeGuidance = timeColumns.isEmpty
         ? ''
         : 'احسب وقت كل محاضرة بالرجوع لأعمدة الوقت المؤكدة فوق بس: شوف خلية '

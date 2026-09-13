@@ -172,6 +172,31 @@ void main() {
 
         expect(schedule.forGroup('ب'), hasLength(3));
       });
+
+      // استخراج المحاضرات بيتقسم على نداء منفصل لكل يوم — كل نداء ممكن
+      // يكتب نفس القسم بصيغة شكلها مختلف شوية عن اللي القايمة (من النداء
+      // التاني) وعدة عليه، فمطابقة حرفية 100% كانت بترجّع صفر محاضرة حتى
+      // لو القسم الصح موجود فعلاً.
+      // Entry extraction splits into one call per day — each call can spell
+      // the same section slightly differently from what the picker (built
+      // from a separate call) expects, so a strict 100% string match
+      // returned zero lectures even when the right section was genuinely
+      // there.
+      test('tolerates minor formatting drift between calls', () {
+        final schedule = ParsedSchedule(
+          entries: [at('ب-5'), at('ب - ج2'), at('أ-ج1')],
+          groups: const ['أ-ج1', 'ب-ج5', 'ب-ج2'],
+        );
+
+        // "ب-5" مفيهوش حرف "ج"، و"ب - ج2" فيها مسافات زيادة — الاتنين لازم
+        // يفضلوا يتلاقوا برغم الاختلاف الشكلي ده.
+        // "ب-5" is missing the "ج" letter, and "ب - ج2" carries extra
+        // spaces — both must still be found despite the cosmetic mismatch.
+        expect(schedule.forGroup('ب', 'ج5'), hasLength(1));
+        expect(schedule.forGroup('ب', 'ج5').single.group, 'ب-5');
+        expect(schedule.forGroup('ب', 'ج2'), hasLength(1));
+        expect(schedule.forGroup('ب', 'ج2').single.group, 'ب - ج2');
+      });
     });
   });
 
