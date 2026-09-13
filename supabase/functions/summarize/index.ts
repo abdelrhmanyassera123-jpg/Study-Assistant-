@@ -756,14 +756,27 @@ async function candidatesFor(
   model?: string,
   limit = 5,
   preferPro = false,
+  preferredModel?: string,
 ): Promise<string[]> {
   if (model && model != "auto") return [model];
+
+  const ranked = await rankedModels(apiKey, preferPro);
+
+  // موديل معيّن اتأكد إنه بيقرا الحالة دي أدق (زي preview موديل جدول
+  // الجداول)، بس مش كل مفتاح بالضرورة عنده وصول له — يتقدّم على الترتيب
+  // العادي، وباقي القايمة المرتّبة بتفضل ورا كخط رجعة.
+  // A specific model confirmed to read this case more accurately (like the
+  // preview model for schedule tables), but not every key necessarily has
+  // access to it — it goes first, with the normally-ranked list kept behind
+  // it as a fallback.
+  const withPreferred = preferredModel
+    ? [preferredModel, ...ranked.filter((m) => m !== preferredModel)]
+    : ranked;
 
   // بنقف عند الحد المطلوب: بعد كده الانتظار بيبقى أطول من فايدته للمستخدم.
   // Capped at the requested limit: past that the wait costs the user more
   // than it buys.
-  const ranked = await rankedModels(apiKey, preferPro);
-  return ranked.slice(0, limit);
+  return withPreferred.slice(0, limit);
 }
 
 Deno.serve(async (req: Request) => {
@@ -820,6 +833,7 @@ Deno.serve(async (req: Request) => {
     temperature?: number;
     file_name?: string;
     prefer_pro?: boolean;
+    preferred_model?: string;
   };
   try {
     body = await req.json();
@@ -869,13 +883,12 @@ Deno.serve(async (req: Request) => {
       // rejection (404 for a model unavailable to this key, or 429 spent
       // quota) which returns immediately without spending real time. So
       // this stays at one candidate normally, but allows two when
-      // `preferPro` is set — pro models are not always available on a free
-      // key, and if the first (pro) is rejected outright, the second
-      // (usually flash) costs the same as if it had been tried first, with
-      // no real time added on top.
-      const jsonMaxCandidates = files?.length
-          ? (body.prefer_pro === true ? 2 : 1)
-          : 5;
+      // `preferPro` or `preferred_model` is set — neither is guaranteed
+      // available on a free key, and if the first is rejected outright, the
+      // second (usually flash) costs the same as if it had been tried
+      // first, with no real time added on top.
+      const wantsFallback = body.prefer_pro === true || !!body.preferred_model;
+      const jsonMaxCandidates = files?.length ? (wantsFallback ? 2 : 1) : 5;
       const jsonMaxAttempts = files?.length ? 1 : 3;
       return await generateJson(
         apiKey,
@@ -884,6 +897,7 @@ Deno.serve(async (req: Request) => {
           body.model,
           jsonMaxCandidates,
           body.prefer_pro === true,
+          body.preferred_model,
         ),
         body.system ?? "",
         body.prompt,
