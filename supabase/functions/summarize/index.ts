@@ -524,7 +524,22 @@ function generateJson(
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts }],
-    generationConfig: { temperature: 0.3, responseMimeType: "application/json" },
+    // من غير سقف صريح، رد كثيف (جدول فيه عشرات المحاضرات) بيتقطع فجأة في
+    // نص الـ JSON (finishReason: "MAX_TOKENS") بمجرد ما يوصل لسقف افتراضي
+    // للموديل — وده بالظبط اللي كان بيظهر للمستخدم كـ"رد فاضي" غير مفهوم.
+    // موديلات التفكير (زي Gemini 2.5/3) بتحسب توكنز التفكير من نفس السقف
+    // كمان، فالسقف الافتراضي بيتاكل قبل ما يوصل للرد الفعلي على جدول معقد.
+    // Without an explicit ceiling, a dense reply (a table with dozens of
+    // lectures) gets cut mid-JSON ("MAX_TOKENS") the moment it hits a
+    // model's default cap — this is exactly what showed up to the user as
+    // an unparseable "empty reply". Thinking models (Gemini 2.5/3) also
+    // charge their reasoning tokens against that same cap, so the default
+    // gets eaten before the real answer on a complex table.
+    generationConfig: {
+      temperature: 0.3,
+      responseMimeType: "application/json",
+      maxOutputTokens: 65536,
+    },
   });
 
   const encoder = new TextEncoder();

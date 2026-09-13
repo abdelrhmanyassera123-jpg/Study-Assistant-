@@ -769,10 +769,27 @@ class GeminiSummarizer implements Summarizer {
     onProgress?.call(structureEnd);
 
     final structure = decodeModelJson(structureResult);
-    final timeColumns = <String>[
-      for (final c in (structure?['time_columns'] as List?) ?? const [])
-        '$c'.trim(),
-    ]..removeWhere((c) => c.isEmpty);
+
+    // بنبني شريط الأعمدة إحنا بالحساب، مش بنسيب الموديل يعدّدها — تعدادها
+    // كان بيتلخبط ("استراحة" بتتكرر غلط، وترتيب غلط) حتى لما نطلبها صريحة.
+    // قراية بداية اليوم ونهايته وطول العمود مهمة أبسط بكتير وبتغلط أقل.
+    // We build the column ladder ourselves by arithmetic instead of letting
+    // the model enumerate it — enumeration kept getting scrambled ("Break"
+    // duplicated wrongly, out of order) even when asked for explicitly.
+    // Reading the day's start, end, and slot length is a much simpler task
+    // that errors far less.
+    final dayStartMin = ParsedLecture.minutesFromClock('${structure?['day_start'] ?? ''}');
+    final dayEndMin = ParsedLecture.minutesFromClock('${structure?['day_end'] ?? ''}');
+    final slotMinutes = num.tryParse('${structure?['slot_minutes'] ?? ''}')?.toInt() ?? 0;
+
+    final timeColumns = <String>[];
+    if (dayStartMin != null && dayEndMin != null && slotMinutes > 0) {
+      String clock(int m) =>
+          '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+      for (var t = dayStartMin; t < dayEndMin; t += slotMinutes) {
+        timeColumns.add('${clock(t)}-${clock(t + slotMinutes)}');
+      }
+    }
 
     final groups = <String>[];
     final rawGroups = structure?['groups'];
