@@ -784,33 +784,65 @@ class GeminiSummarizer implements Summarizer {
     }
     final groupLabel = '${structure?['group_label'] ?? ''}'.trim();
 
-    // مرحلة 2: استخراج المحاضرات، شايلة تركيب المرحلة الأولى كحقيقة مؤكدة.
-    // Phase 2: extract the lectures, carrying phase one's structure as an
-    // established fact.
-    pendingCount = 0;
-    final entriesResult = await _postJson(
-      {
-        'action': 'json',
-        'model': config.requestedModel,
-        'system': StudyPrompt.scheduleEntriesSystem(
-          timeColumns: timeColumns,
-          groups: groups,
-          groupLabel: groupLabel,
-        ),
-        'prompt': StudyPrompt.scheduleEntriesPrompt(text),
-        if (files != null) 'files': files,
-      },
-      onPending: () {
-        pendingCount++;
-        final waitFraction = 1 - 1 / (pendingCount + 1);
-        onProgress?.call(structureEnd + (1 - structureEnd) * waitFraction);
-      },
-    );
-    onProgress?.call(1);
+    final days = <String>[
+      for (final d in (structure?['days'] as List?) ?? const []) '$d'.trim(),
+    ]..removeWhere((d) => d.isEmpty);
 
-    final parsed = decodeModelJson(entriesResult);
-    final rows = parsed?['entries'];
-    if (rows is! List) {
+    // مرحلة 2: استخراج المحاضرات، شايلة تركيب المرحلة الأولى كحقيقة مؤكدة.
+    // لو الأيام معروفة، بنطلب كل يوم في نداء لوحده — جدول أسبوع كامل في رد
+    // واحد بيبقى تقيل وممكن ياخد وقت يقرب من مهلة السيرفر، ورد يوم واحد
+    // بيفضل صغير ودايمًا سريع.
+    // Phase 2: extract the lectures, carrying phase one's structure as an
+    // established fact. When the days are known, each is requested in its
+    // own call — a whole week in one reply gets heavy and can brush against
+    // the server's time ceiling, while a single day's reply stays small and
+    // reliably fast.
+    final dayScopes = days.isEmpty ? const <String?>[null] : days;
+    final rows = <dynamic>[];
+
+    for (var i = 0; i < dayScopes.length; i++) {
+      final day = dayScopes[i];
+      pendingCount = 0;
+      try {
+        final entriesResult = await _postJson(
+          {
+            'action': 'json',
+            'model': config.requestedModel,
+            'system': StudyPrompt.scheduleEntriesSystem(
+              timeColumns: timeColumns,
+              groups: groups,
+              groupLabel: groupLabel,
+              day: day,
+            ),
+            'prompt': StudyPrompt.scheduleEntriesPrompt(text, day: day),
+            if (files != null) 'files': files,
+          },
+          onPending: () {
+            pendingCount++;
+            final waitFraction = 1 - 1 / (pendingCount + 1);
+            final callStart = structureEnd +
+                (1 - structureEnd) * i / dayScopes.length;
+            final callEnd = structureEnd +
+                (1 - structureEnd) * (i + 1) / dayScopes.length;
+            onProgress?.call(callStart + (callEnd - callStart) * waitFraction);
+          },
+        );
+
+        final dayRows = decodeModelJson(entriesResult)?['entries'];
+        if (dayRows is List) rows.addAll(dayRows);
+      } on SummarizerException {
+        // يوم واحد فشل (حصة خلصت، تايم آوت) مبرّرش نضيع كل الأيام التانية
+        // اللي فعلاً نجحت — نكمل الباقي ونسيب اللي فشل من غير جدوله.
+        // One day failing (quota spent, timeout) is not a reason to lose
+        // every other day that actually succeeded — keep going and leave the
+        // failed one unscheduled.
+      }
+      onProgress?.call(
+        structureEnd + (1 - structureEnd) * (i + 1) / dayScopes.length,
+      );
+    }
+
+    if (rows.isEmpty) {
       throw const SummarizerException('الجدول رجع بشكل مش مفهوم.');
     }
 
