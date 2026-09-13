@@ -235,4 +235,31 @@ class Repository {
         .gte('reviewed_at', since.toUtc().toIso8601String());
     return rows.length;
   }
+
+  // ------------------------------------------------------- personal API key
+  // القيمة نفسها متتقراش تاني بعد ما تتحفظ — بس بنعرف هي موجودة ولا لأ.
+  // الفنكشن (summarize) هي اللي بتقرا القيمة الحقيقية وقت النداء على Gemini.
+  // The value itself is never read back after saving — only whether one
+  // exists. The summarize function is what reads the real value when it
+  // calls Gemini.
+  /// هل المستخدم حاطط مفتاح Gemini شخصي.
+  /// Whether the user has a personal Gemini key set.
+  Future<bool> hasGeminiKey() async {
+    final row = await _db
+        .from('user_api_keys')
+        .select('user_id')
+        .maybeSingle();
+    return row != null;
+  }
+
+  /// بيحفظ مفتاح Gemini الشخصي، مستبدلًا القديم لو موجود.
+  /// Saves the personal Gemini key, replacing an earlier one if present.
+  Future<void> saveGeminiKey(String key) => _db.from('user_api_keys').upsert({
+        'user_id': _uid,
+        'gemini_api_key': key.trim(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  Future<void> deleteGeminiKey() =>
+      _db.from('user_api_keys').delete().eq('user_id', _uid);
 }

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
+import '../../data/providers.dart';
+import '../../widgets/common.dart';
 import 'model_usage.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
@@ -22,12 +24,60 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
   bool _loading = false;
   SummarizerException? _error;
 
+  /// null لسه بيتحمّل، true/false الحالة الفعلية.
+  /// null while loading, true/false once known.
+  bool? _hasPersonalKey;
+  final _keyController = TextEditingController();
+  bool _savingKey = false;
+
   @override
   void initState() {
     super.initState();
     // بنجيب القايمة على طول عشان المستخدم يلاقيها جاهزة قدامه.
     // Fetch on open so the list is already there when the sheet appears.
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    _loadKeyStatus();
+  }
+
+  @override
+  void dispose() {
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadKeyStatus() async {
+    final has = await ref.read(repositoryProvider).hasGeminiKey();
+    if (mounted) setState(() => _hasPersonalKey = has);
+  }
+
+  Future<void> _saveKey() async {
+    final key = _keyController.text.trim();
+    if (key.isEmpty) return;
+    setState(() => _savingKey = true);
+    try {
+      await ref.read(repositoryProvider).saveGeminiKey(key);
+      _keyController.clear();
+      if (mounted) setState(() => _hasPersonalKey = true);
+    } catch (e) {
+      if (mounted) showSnack(context, '$e');
+    } finally {
+      if (mounted) setState(() => _savingKey = false);
+    }
+  }
+
+  Future<void> _deleteKey() async {
+    setState(() => _savingKey = true);
+    try {
+      await ref.read(repositoryProvider).deleteGeminiKey();
+      if (mounted) {
+        setState(() => _hasPersonalKey = false);
+        showSnack(context, context.l.personalKeyDeleted);
+      }
+    } catch (e) {
+      if (mounted) showSnack(context, '$e');
+    } finally {
+      if (mounted) setState(() => _savingKey = false);
+    }
   }
 
   Future<void> _refresh() async {
@@ -114,6 +164,75 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                   .labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
             ),
+            const SizedBox(height: Insets.lg),
+            Text(l.personalKeyTitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: Insets.sm),
+            Text(
+              l.personalKeyHint,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
+            ),
+            const SizedBox(height: Insets.md),
+            if (_hasPersonalKey == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                ),
+              )
+            else if (_hasPersonalKey == true)
+              Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 15, color: scheme.primary),
+                  const SizedBox(width: Insets.sm),
+                  Expanded(
+                    child: Text(
+                      l.personalKeySaved,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: scheme.primary),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _savingKey ? null : _deleteKey,
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: Text(l.deletePersonalKey),
+                  ),
+                ],
+              )
+            else ...[
+              TextField(
+                controller: _keyController,
+                obscureText: true,
+                textDirection: TextDirection.ltr,
+                decoration: InputDecoration(hintText: l.personalKeyPlaceholder),
+              ),
+              const SizedBox(height: Insets.sm),
+              FilledButton.icon(
+                onPressed: _savingKey ? null : _saveKey,
+                icon: _savingKey
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.key_rounded, size: 18),
+                label: Text(l.savePersonalKey),
+              ),
+            ],
+            const SizedBox(height: Insets.lg),
+            Divider(color: scheme.outlineVariant),
             const SizedBox(height: Insets.md),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

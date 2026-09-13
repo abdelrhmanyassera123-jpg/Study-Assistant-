@@ -65,6 +65,42 @@ function isSignedInUser(req: Request): boolean {
   }
 }
 
+/// بيدوّر على مفتاح Gemini شخصي للمستخدم اللي بينادي، من جدول
+/// "user_api_keys" — بيرجّع null لو مالوش مفتاح شخصي محفوظ.
+///
+/// بنستخدم توكن المستخدم نفسه (Authorization) بدل مفتاح الخدمة، عشان
+/// Row Level Security على الجدول تحصر النتيجة في صف المستخدم ده بس تلقائيًا
+/// — من غير ما نحتاج نفك التوكن أو نفلتر بـ user_id يدوي.
+/// Looks up the calling user's personal Gemini key from "user_api_keys" —
+/// returns null when they have none saved.
+///
+/// The caller's own token (Authorization) is used instead of a service key,
+/// so Row Level Security on the table automatically scopes the result to
+/// that user's own row — no need to decode the token or filter by user_id
+/// by hand.
+async function personalApiKey(req: Request): Promise<string | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const auth = req.headers.get("Authorization");
+  if (!supabaseUrl || !anonKey || !auth) return null;
+
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&limit=1`,
+      { headers: { apikey: anonKey, Authorization: auth } },
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const key = rows?.[0]?.gemini_api_key;
+    return typeof key === "string" && key.trim() ? key.trim() : null;
+  } catch {
+    // فشل الاستعلام مش مبرر لإسقاط الطلب كله — بنكمل بالمفتاح المشترك.
+    // A failed lookup is not a reason to drop the whole request — fall
+    // through to the shared key.
+    return null;
+  }
+}
+
 /// ترتيب الموديل — الأقل رقمًا يظهر الأول.
 /// A model's rank; lower sorts first.
 ///
@@ -187,23 +223,32 @@ function retryFailure(attempt: Attempt): Response {
   );
 }
 
-/// أسماء الموديلات المفلترة (من غير ترتيب)، متخزنة مؤقتًا.
-/// The filtered model names (unsorted), briefly cached.
+/// أسماء الموديلات المفلترة (من غير ترتيب)، متخزنة مؤقتًا لكل مفتاح لوحده.
+/// The filtered model names (unsorted), briefly cached per key on its own.
 ///
 /// نداء التسلسل التلقائي محتاج القايمة قبل كل تلخيص؛ من غير التخزين ده هيبقى
 /// في طلب زيادة لجوجل مع كل مرة. الترتيب اتفصل عن الفلترة عشان تفضيلة واحدة
 /// (زي [preferPro]) ما تحتاجش تجيب القايمة من جوجل تاني — بترتب اللي اتخزن
 /// بس.
+///
+/// **متخزنة لكل مفتاح لوحده**: من ساعة ما بقى فيه مفاتيح شخصية للمستخدمين،
+/// موديلات مفتاح مستخدم ممكن تختلف تمامًا عن موديلات مفتاح تاني — تخزين
+/// عام واحد كان هيسرّب قايمة مفتاح لطلبات مفتاح تاني.
 /// Auto-mode needs the list before every summary; without this cache that is
 /// an extra Google request each time. Sorting is split from filtering so a
 /// one-off preference (like [preferPro]) does not need a fresh fetch — it
 /// just re-sorts what is already cached.
-let filteredCache: { names: string[]; at: number } | null = null;
+///
+/// **Cached per key on its own**: now that users can carry personal keys, one
+/// key's models can differ entirely from another's — a single shared cache
+/// would leak one key's list into another key's requests.
+const filteredCache = new Map<string, { names: string[]; at: number }>();
 const RANKED_TTL_MS = 10 * 60 * 1000;
 
 async function filteredModelNames(apiKey: string): Promise<string[]> {
-  if (filteredCache && Date.now() - filteredCache.at < RANKED_TTL_MS) {
-    return filteredCache.names;
+  const cached = filteredCache.get(apiKey);
+  if (cached && Date.now() - cached.at < RANKED_TTL_MS) {
+    return cached.names;
   }
   const upstream = await fetch(`${GEMINI_BASE}/models?key=${apiKey}&pageSize=200`);
   if (!upstream.ok) {
@@ -211,7 +256,7 @@ async function filteredModelNames(apiKey: string): Promise<string[]> {
     return [];
   }
   const names = filterModelNames(await upstream.json());
-  filteredCache = { names, at: Date.now() };
+  filteredCache.set(apiKey, { names, at: Date.now() });
   return names;
 }
 
@@ -718,7 +763,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: "لازم تكون مسجّل دخول." }, 401);
   }
 
-  const apiKeyEarly = Deno.env.get("GEMINI_API_KEY");
+  // مفتاح المستخدم الشخصي (لو محطوط) بيتقدّم على المفتاح المشترك — بيستهلك
+  // من حصته هو بس، بدل ما يشارك حصة كل مستخدمين التطبيق.
+  // The user's own key (when set) is preferred over the shared one — it
+  // spends from their own quota instead of sharing every app user's quota.
+  const personalKey = await personalApiKey(req);
+  const apiKeyEarly = personalKey ?? Deno.env.get("GEMINI_API_KEY");
 
   // الرفع بيتحدد من الرابط مش من الجسم: الجسم نفسه هو الملف، وقرايته كـ JSON
   // هي بالظبط اللي بنحاول نتجنبه.
@@ -734,7 +784,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = apiKeyEarly;
   if (!apiKey) {
     return json(
       {

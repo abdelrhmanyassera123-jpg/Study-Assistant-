@@ -715,6 +715,25 @@ class AppL10n {
             "above.",
       );
   String get autoLabel => _('تلقائي', 'Automatic');
+
+  /// قسم مفتاح Gemini الشخصي في إعدادات التلخيص.
+  /// The personal Gemini key section in the summarize settings.
+  String get personalKeyTitle => _('مفتاحك الشخصي', 'Your personal key');
+  String get personalKeyHint => _(
+        'لو حطيت مفتاح Gemini بتاعك، هيتستخدم بدل المفتاح المشترك — '
+            'واستهلاكك هيبقى من حصتك انت بس، مش متشارك مع باقي المستخدمين.',
+        "If you set your own Gemini key, it is used instead of the shared "
+            "one — your usage spends from your own quota, not shared with "
+            "other users.",
+      );
+  String get personalKeySaved =>
+      _('مفتاح شخصي محفوظ', 'A personal key is saved');
+  String get personalKeyPlaceholder =>
+      _('الصق مفتاح Gemini هنا', 'Paste your Gemini key here');
+  String get savePersonalKey => _('احفظ المفتاح', 'Save key');
+  String get deletePersonalKey => _('امسح المفتاح', 'Delete key');
+  String get personalKeyDeleted =>
+      _('اتمسح — هيرجع يستخدم المفتاح المشترك', 'Deleted — back to the shared key');
   String get lastUsedModel => _('آخر موديل رد', 'Last model used');
   String get usageTitle => _('استهلاكك النهاردة', 'Your usage today');
   String get noUsageYet => _('لسه ما استخدمتش حاجة النهاردة', 'Nothing used today');
