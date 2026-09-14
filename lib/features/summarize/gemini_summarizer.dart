@@ -856,7 +856,16 @@ class GeminiSummarizer implements Summarizer {
           },
         );
 
-        final dayRows = decodeModelJson(entriesResult)?['entries'];
+        // الموديل مفروض يرجّع {"entries":[...]}، بس أحيانًا بيرجّع المصفوفة
+        // عارية [...] من غير الغلاف — بنتعامل مع الشكلين عشان رد سليم
+        // ميضيعش بس لأنه مش ملفوف بالظبط زي ما اتطلب.
+        // The model is meant to return {"entries":[...]}, but sometimes
+        // returns the bare array [...] without the wrapper — handling both
+        // shapes so a valid reply isn't lost just for not being wrapped
+        // exactly as asked.
+        final dayRows = entriesResult is List
+            ? entriesResult
+            : decodeModelJson(entriesResult)?['entries'];
         if (dayRows is List) rows.addAll(dayRows);
       } on SummarizerException {
         // يوم واحد فشل (حصة خلصت، تايم آوت) مبرّرش نضيع كل الأيام التانية

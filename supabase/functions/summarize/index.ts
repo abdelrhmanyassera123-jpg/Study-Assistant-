@@ -316,7 +316,18 @@ function filterModelNames(body: {
       !name.includes("embedding") &&
       !name.includes("imagen") &&
       !name.includes("veo") &&
-      !name.includes("tts")
+      !name.includes("tts") &&
+      // موديلات متخصصة (صوت لحظي، روبوتات، تحكم في شاشة) مش معمولة
+      // لاستخراج JSON من نص وملفات — تسيبها برّه القايمة أضمن من إنها
+      // تتصدّرها غلط بسبب اسم رقمها مش على الشكل المتوقع.
+      // Specialized variants (live audio, robotics, screen control) are not
+      // built for text/file JSON extraction — excluding them outright is
+      // safer than letting an unusual version-number shape sort one to the
+      // front by mistake.
+      !name.includes("omni") &&
+      !name.includes("robotics") &&
+      !name.includes("computer-use") &&
+      !name.includes("live")
     );
 }
 
@@ -340,9 +351,20 @@ function filterModelNames(body: {
 /// alphabetical comparison ("2.5" before "3.6") kept trying the older name
 /// first even though it can be entirely rejected for some accounts, with no
 /// second attempt (file-bearing calls filter down to a single candidate).
+///
+/// "999 لأسماء من غير رقم" لازم يتحصر في alias الـ "-latest" الموثّقة إنها
+/// بتتبع أحدث إصدار — لو اتحسب عام على أي اسم من غير رقم واضح، اسم غريب
+/// زي "gemini-omni-1.1-flash" (الرقم بعد كلمة تانية، مش بعد "gemini-"
+/// على طول) كان بيتحط أول القايمة غلط، قبل حتى أحدث إصدار رقمي حقيقي.
+/// The "999 for names without a number" must stay scoped to the documented
+/// "-latest" aliases that genuinely track the newest release — applied
+/// generally to any unnumbered name, an odd one like "gemini-omni-1.1-flash"
+/// (the number sits after another word, not right after "gemini-") wrongly
+/// sorted first, ahead of even the real newest numbered release.
 function versionOf(name: string): number {
-  const m = name.match(/gemini-(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : 999;
+  if (name.endsWith("-latest")) return 999;
+  const m = name.match(/^gemini-(\d+(?:\.\d+)?)(?:-|$)/);
+  return m ? parseFloat(m[1]) : -1;
 }
 
 function sortModels(names: string[], preferPro = false): string[] {
