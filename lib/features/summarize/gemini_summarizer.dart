@@ -811,25 +811,34 @@ class GeminiSummarizer implements Summarizer {
     }
     final groupLabel = '${structure?['group_label'] ?? ''}'.trim();
 
+    final days = <String>[
+      for (final d in (structure?['days'] as List?) ?? const []) '$d'.trim(),
+    ]..removeWhere((d) => d.isEmpty);
+
     // مرحلة 2: استخراج المحاضرات، شايلة تركيب المرحلة الأولى كحقيقة مؤكدة.
-    // نداء واحد للأسبوع كله، مش نداء لكل يوم — الحصة المجانية طلعت 20 طلب
-    // في اليوم بس لكل مشروع؛ نداء لكل يوم (يوصل 6-7) كان بيخلّص الحصة كلها
-    // من محاولتين استيراد بس. سقف الـ maxOutputTokens (65536) اللي ضفناه
-    // بيمنع التقطيع (MAX_TOKENS) اللي كان سبب التقسيم أصلاً، فمعندناش داعي
-    // نضحي بالحصة عشانه تاني.
+    // على مكالمتين كحد أقصى، مش نداء لكل يوم (كان بياكل الحصة اليومية
+    // كلها من محاولتين استيراد بس) ومش نداء واحد للأسبوع كله (لقينا فعليًا
+    // إنه بيهمل يوم كامل — أول يوم في الترتيب طلع بربع محاضراته الحقيقية
+    // بس في اختبار مباشر). نص الأسبوع في كل نداء بيفضل حِمل يقدر عليه.
     // Phase 2: extract the lectures, carrying phase one's structure as an
-    // established fact. One call for the whole week, not one per day — the
-    // free tier turned out to be just 20 requests per day per project; a
-    // per-day call (6-7 of them) was burning the entire daily quota in two
-    // import attempts. The maxOutputTokens ceiling (65536) already added
-    // prevents the truncation (MAX_TOKENS) that motivated the split in the
-    // first place, so there is no longer a reason to trade quota for it.
-    const dayScopes = <String?>[null];
+    // established fact. Two calls at most, not one per day (that burned the
+    // whole daily quota in two import attempts) and not a single call for
+    // the entire week (found by direct testing to genuinely drop a whole
+    // day — the first day in order came back with about a quarter of its
+    // real lectures). Half the week per call stays a load the model can
+    // actually carry.
+    final List<List<String>?> dayScopes;
+    if (days.length <= 3) {
+      dayScopes = [days.isEmpty ? null : days];
+    } else {
+      final mid = (days.length / 2).ceil();
+      dayScopes = [days.sublist(0, mid), days.sublist(mid)];
+    }
     final rows = <dynamic>[];
     final failedDays = <String>[];
 
     for (var i = 0; i < dayScopes.length; i++) {
-      final day = dayScopes[i];
+      final chunk = dayScopes[i];
       pendingCount = 0;
       try {
         final entriesResult = await _postJson(
@@ -840,9 +849,9 @@ class GeminiSummarizer implements Summarizer {
               timeColumns: timeColumns,
               groups: groups,
               groupLabel: groupLabel,
-              day: day,
+              days: chunk,
             ),
-            'prompt': StudyPrompt.scheduleEntriesPrompt(text, day: day),
+            'prompt': StudyPrompt.scheduleEntriesPrompt(text, days: chunk),
             if (files != null) 'files': files,
           },
           onPending: () {
@@ -863,19 +872,19 @@ class GeminiSummarizer implements Summarizer {
         // returns the bare array [...] without the wrapper — handling both
         // shapes so a valid reply isn't lost just for not being wrapped
         // exactly as asked.
-        final dayRows = entriesResult is List
+        final chunkRows = entriesResult is List
             ? entriesResult
             : decodeModelJson(entriesResult)?['entries'];
-        if (dayRows is List) rows.addAll(dayRows);
+        if (chunkRows is List) rows.addAll(chunkRows);
       } on SummarizerException {
-        // يوم واحد فشل (حصة خلصت، تايم آوت) مبرّرش نضيع كل الأيام التانية
-        // اللي فعلاً نجحت — نكمل الباقي ونسيب اللي فشل من غير جدوله. بس
-        // بنسجله عشان المستخدم يعرف إن جدوله ناقص، مش يفتكر إن ده كل حاجة.
-        // One day failing (quota spent, timeout) is not a reason to lose
-        // every other day that actually succeeded — keep going and leave the
+        // نص فشل (حصة خلصت، تايم آوت) مبرّرش نضيع النص التاني اللي فعلاً
+        // نجح — نكمل ونسيب اللي فشل من غير جدوله. بس بنسجله عشان المستخدم
+        // يعرف إن جدوله ناقص، مش يفتكر إن ده كل حاجة.
+        // One half failing (quota spent, timeout) is not a reason to lose
+        // the other half that actually succeeded — keep going and leave the
         // failed one unscheduled. But record it so the user learns their
         // schedule is incomplete, rather than assuming this is everything.
-        if (day != null) failedDays.add(day);
+        if (chunk != null) failedDays.addAll(chunk);
       }
       onProgress?.call(
         structureEnd + (1 - structureEnd) * (i + 1) / dayScopes.length,
