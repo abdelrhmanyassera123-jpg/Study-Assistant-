@@ -56,8 +56,31 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
     setState(() => _savingKey = true);
     try {
       await ref.read(repositoryProvider).saveGeminiKey(key);
-      _keyController.clear();
-      if (mounted) setState(() => _hasPersonalKey = true);
+
+      // نتأكد إن المفتاح شغال فعليًا بنداء حقيقي بيه، مش بس بحفظه — عشان
+      // المستخدم يعرف على طول لو فيه مشكلة (مفتاح غلط، مشروع لسه بيتفعّل)
+      // بدل ما يكتشفها بعدين وسط رسالة عامة مش واضحة.
+      // Confirmed working with a real call using it, not just saved — so
+      // the user learns right away if something is wrong (a bad key, a
+      // project still activating) instead of discovering it later behind a
+      // vague generic message.
+      try {
+        final models = await ref.read(activeSummarizerProvider).listModels();
+        if (models.isEmpty) {
+          throw const SummarizerException('المفتاح ما رجّعش أي موديل.');
+        }
+        _keyController.clear();
+        if (mounted) {
+          setState(() => _hasPersonalKey = true);
+          showSnack(context, context.l.personalKeyVerified);
+        }
+      } on SummarizerException catch (e) {
+        await ref.read(repositoryProvider).deleteGeminiKey();
+        if (mounted) {
+          setState(() => _hasPersonalKey = false);
+          showSnack(context, context.l.personalKeyTestFailed(e.message));
+        }
+      }
     } catch (e) {
       if (mounted) showSnack(context, '$e');
     } finally {
@@ -228,7 +251,7 @@ class _ModelSettingsSheetState extends ConsumerState<ModelSettingsSheet> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.key_rounded, size: 18),
-                label: Text(l.savePersonalKey),
+                label: Text(_savingKey ? l.verifyingPersonalKey : l.savePersonalKey),
               ),
             ],
             const SizedBox(height: Insets.lg),

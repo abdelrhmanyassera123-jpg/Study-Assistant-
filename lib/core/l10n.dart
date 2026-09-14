@@ -746,6 +746,18 @@ class AppL10n {
   String get personalKeyPlaceholder =>
       _('الصق مفتاح Gemini هنا', 'Paste your Gemini key here');
   String get savePersonalKey => _('احفظ المفتاح', 'Save key');
+  String get verifyingPersonalKey =>
+      _('بيتأكد إن المفتاح شغال...', 'Checking the key works...');
+  String get personalKeyVerified =>
+      _('اتحفظ واتأكد إنه شغال فعليًا', 'Saved and confirmed working');
+  /// المفتاح اتمسح تاني لأن الاختبار فشل — عشان المستخدم ميعتمدش على مفتاح
+  /// عاطل من غير ما يعرف.
+  /// The key was deleted again because the test failed — so the user
+  /// doesn't unknowingly rely on a broken key.
+  String personalKeyTestFailed(String detail) => _(
+        'المفتاح ده مش شغال، فمسحناه تاني: $detail',
+        "This key doesn't work, so it was removed again: $detail",
+      );
   String get deletePersonalKey => _('امسح المفتاح', 'Delete key');
   String get personalKeyDeleted =>
       _('اتمسح — هيرجع يستخدم المفتاح المشترك', 'Deleted — back to the shared key');
