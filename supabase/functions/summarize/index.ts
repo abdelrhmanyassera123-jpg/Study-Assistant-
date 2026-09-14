@@ -322,11 +322,37 @@ function filterModelNames(body: {
 
 /// بيرتّب أسماء موديلات مفلترة بالفايدة مش بالأبجدية.
 /// Sorts already-filtered model names by usefulness, not alphabetically.
+/// رقم إصدار Gemini المكتوب في الاسم (زي 2.5 أو 3.6)، أو رقم كبير لأسماء
+/// من غير رقم (زي "gemini-flash-latest") عشان تتعامل كأحدث إصدار.
+///
+/// جوجل بتسحب إصدارات قديمة من على مستخدمين جدد (شفنا "models/gemini-2.5-
+/// flash is no longer available to new users" فعليًا على حساب جديد) —
+/// فمقارنة أبجدية ("2.5" قبل "3.6") كانت بتخلي الاسم الأقدم يتجرب الأول
+/// رغم إنه ممكن يبقى مرفوض بالكامل لحسابات معيّنة، من غير أي محاولة تانية
+/// (النداءات اللي فيها ملفات بترشّح مرشّح واحد بس).
+///
+/// The Gemini version number written in the name (like 2.5 or 3.6), or a
+/// large number for names without one (like "gemini-flash-latest") so they
+/// are treated as the newest.
+///
+/// Google retires old versions for new accounts (we saw "models/gemini-2.5-
+/// flash is no longer available to new users" on an actual new account) —
+/// alphabetical comparison ("2.5" before "3.6") kept trying the older name
+/// first even though it can be entirely rejected for some accounts, with no
+/// second attempt (file-bearing calls filter down to a single candidate).
+function versionOf(name: string): number {
+  const m = name.match(/gemini-(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 999;
+}
+
 function sortModels(names: string[], preferPro = false): string[] {
-  // الأول في القايمة هو اللي بيتجرب الأول.
-  // The first entry is the one tried first.
+  // الأول في القايمة هو اللي بيتجرب الأول: بالفايدة، وبعدين بالأحدث إصدارًا.
+  // The first entry is the one tried first: by usefulness, then by the
+  // newest version.
   return [...names].sort((a, b) =>
-    rank(a, preferPro) - rank(b, preferPro) || a.localeCompare(b)
+    rank(a, preferPro) - rank(b, preferPro) ||
+    versionOf(b) - versionOf(a) ||
+    a.localeCompare(b)
   );
 }
 
@@ -867,28 +893,25 @@ Deno.serve(async (req: Request) => {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
       const files = body.files ?? (body.file ? [body.file] : undefined);
       // نداءات الملفات (جدول، تحليل شكل) قيسناها حقيقي: موديل واحد بيرد في
-      // ~117 ثانية، لكن لو الأول فشل وعدّى لتاني **بعد ما استهلك وقته
-      // بمحاولة حقيقية بطيئة**، ده وحده وصل لـ ~126 ثانية — قريب جدًا من حد
+      // ~117 ثانية، لكن لو الأول فشل **بعد ما استهلك وقته بمحاولة حقيقية
+      // بطيئة** وعدّى لتاني، ده وحده وصل لـ ~126 ثانية — قريب جدًا من حد
       // الـ 150. الخطر ده خاص بمحاولتين بطيئتين ورا بعض، مش برفض سريع
-      // (404 لموديل مش متاح للمفتاح، أو 429 حصته خلصت) اللي بيرجع فورًا من
-      // غير ما ياخد وقت حقيقي. فبنسيب مرشّح واحد بس عادةً، وبنسمح باتنين
-      // بس لما `preferPro` مفعّلة — موديلات pro مش دايمًا متاحة لكل مفتاح
-      // مجاني، فلو الأول (pro) اترفض فورًا، التاني (flash غالبًا) بياخد
-      // نفس الوقت وكأنه المحاولة الأولى، من غير ما يضيف وقت حقيقي فوقه.
+      // (404 لموديل مسحوب من حسابات جديدة، أو 429 حصته خلصت) اللي بيرجع
+      // فورًا من غير ما ياخد وقت حقيقي — وده فعليًا شفناه يحصل على حساب
+      // جديد حقيقي (models/gemini-2.5-flash رجعت 404 "no longer available
+      // to new users"). فبنسمح بكذا مرشّح، طالما الرفض بيرجع بسرعة.
       // File-bearing calls (schedule, style analysis) were measured for
       // real: one model answers in ~117s, but falling back to a second
       // candidate **after it burned its own time on a real slow attempt**
       // alone took ~126s — uncomfortably close to the 150s ceiling. That
       // risk is specific to two slow attempts stacking, not to a fast
-      // rejection (404 for a model unavailable to this key, or 429 spent
-      // quota) which returns immediately without spending real time. So
-      // this stays at one candidate normally, but allows two when
-      // `preferPro` or `preferred_model` is set — neither is guaranteed
-      // available on a free key, and if the first is rejected outright, the
-      // second (usually flash) costs the same as if it had been tried
-      // first, with no real time added on top.
-      const wantsFallback = body.prefer_pro === true || !!body.preferred_model;
-      const jsonMaxCandidates = files?.length ? (wantsFallback ? 2 : 1) : 5;
+      // rejection (404 for a model retired from new accounts, or 429 spent
+      // quota) which returns immediately without spending real time — and
+      // that is exactly what turned up on an actual new account
+      // (models/gemini-2.5-flash answering 404 "no longer available to new
+      // users"). So a few candidates are allowed, as long as a rejection
+      // keeps coming back fast.
+      const jsonMaxCandidates = files?.length ? 3 : 5;
       const jsonMaxAttempts = files?.length ? 1 : 3;
       return await generateJson(
         apiKey,
