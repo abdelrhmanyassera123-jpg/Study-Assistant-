@@ -809,6 +809,16 @@ class GeminiSummarizer implements Summarizer {
       for (var t = dayStartMin; t < dayEndMin; t += slotMinutes) {
         timeColumns.add('${clock(t)}-${clock(t + slotMinutes)}');
       }
+    } else {
+      // شبكة مش منتظمة (فجوة بين عمودين، أو أعمدة أطوالها مختلفة) — مفيش
+      // حساب ممكن يبنيها، فبناخد عناوين الأعمدة زي ما الموديل قراها حرفيًا.
+      // An irregular grid (a gap between columns, or columns of different
+      // lengths) can't be built by arithmetic — take the column labels as
+      // the model read them verbatim instead.
+      for (final c in (structure?['time_columns'] as List?) ?? const []) {
+        final v = '$c'.trim();
+        if (v.isNotEmpty) timeColumns.add(v);
+      }
     }
 
     final groups = <String>[];
