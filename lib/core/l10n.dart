@@ -432,6 +432,21 @@ class AppL10n {
     return '$n محاضرة';
   }
 
+  /// تنبيه لما أيام من الجدول فشلت تتقرا (حصة خلصت، تايم آوت) والجدول
+  /// بالتالي ناقصها.
+  /// A warning when some days of the timetable failed to read (quota,
+  /// timeout) and the schedule is missing them as a result.
+  String scheduleDaysFailed(List<String> days) {
+    final list = days.join('، ');
+    return _(
+      'مش قدرنا نقرا ($list) — حصة الموديل خلصت أو الاتصال اتقطع وقتها. '
+          'الجدول ده ناقصهم؛ جرب تاني بعد شوية عشان تكمّلهم.',
+      "Couldn't read ($list) — the model's quota ran out or the connection "
+          'dropped partway through. This schedule is missing them; try '
+          'again shortly to fill them in.',
+    );
+  }
+
   // التنبيهات / reminders
   String get reminders => _('التنبيهات', 'Reminders');
   String get remindersHint => _(

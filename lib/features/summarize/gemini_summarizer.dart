@@ -836,6 +836,7 @@ class GeminiSummarizer implements Summarizer {
     // reliably fast.
     final dayScopes = days.isEmpty ? const <String?>[null] : days;
     final rows = <dynamic>[];
+    final failedDays = <String>[];
 
     for (var i = 0; i < dayScopes.length; i++) {
       final day = dayScopes[i];
@@ -870,10 +871,13 @@ class GeminiSummarizer implements Summarizer {
         if (dayRows is List) rows.addAll(dayRows);
       } on SummarizerException {
         // يوم واحد فشل (حصة خلصت، تايم آوت) مبرّرش نضيع كل الأيام التانية
-        // اللي فعلاً نجحت — نكمل الباقي ونسيب اللي فشل من غير جدوله.
+        // اللي فعلاً نجحت — نكمل الباقي ونسيب اللي فشل من غير جدوله. بس
+        // بنسجله عشان المستخدم يعرف إن جدوله ناقص، مش يفتكر إن ده كل حاجة.
         // One day failing (quota spent, timeout) is not a reason to lose
         // every other day that actually succeeded — keep going and leave the
-        // failed one unscheduled.
+        // failed one unscheduled. But record it so the user learns their
+        // schedule is incomplete, rather than assuming this is everything.
+        if (day != null) failedDays.add(day);
       }
       onProgress?.call(
         structureEnd + (1 - structureEnd) * (i + 1) / dayScopes.length,
@@ -922,6 +926,7 @@ class GeminiSummarizer implements Summarizer {
       groups: groups,
       groupLabel: groupLabel,
       note: '${structure?['note'] ?? ''}'.trim(),
+      failedDays: failedDays,
     );
   }
 

@@ -407,6 +407,14 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (read.failedDays.isNotEmpty) ...[
+                      InfoBanner(
+                        message: l.scheduleDaysFailed(read.failedDays),
+                        icon: Icons.warning_amber_rounded,
+                        tone: BannerTone.warn,
+                      ),
+                      const SizedBox(height: Insets.lg),
+                    ],
                     for (var i = 0; i < _visible.length; i++)
                       _ReadRow(
                         lecture: _visible[i],

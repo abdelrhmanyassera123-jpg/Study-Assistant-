@@ -194,6 +194,7 @@ class ParsedSchedule {
     this.groups = const [],
     this.groupLabel = '',
     this.note = '',
+    this.failedDays = const [],
   });
 
   final List<ParsedLecture> entries;
@@ -210,6 +211,13 @@ class ParsedSchedule {
   /// A line saying how the sections were recognised, so the reading can be
   /// checked.
   final String note;
+
+  /// أيام حاولنا نستخرج محاضراتها وفشلنا (حصة خلصت، تايم آوت) فمالهاش
+  /// محاضرات في "entries" أصلاً — الجدول ناقص بسببها بصمت من غير الحقل ده.
+  /// Days a lecture-extraction attempt failed for (quota spent, timeout) and
+  /// so have no entries at all — the schedule is silently missing them
+  /// without this field.
+  final List<String> failedDays;
 
   bool get needsChoice => groups.length > 1;
 
