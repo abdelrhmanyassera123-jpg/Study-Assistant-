@@ -62,18 +62,6 @@ class GeminiSummarizer implements Summarizer {
   final GeminiConfig config;
   final http.Client _client;
 
-  /// موديل preview أحدث، اتأكد بالاختبار المباشر (رفع جدول حقيقي ومقارنة
-  /// الرد يدويًا بالأصل) إنه بيقرا جداول كثيفة أدق بوضوح من الموديل المرتّب
-  /// أول عادةً — بس preview يعني جوجل ممكن تغيّره أو تشيله من غير سابق
-  /// إنذار، فبيتفضّل بس بترتيب أول مع رجوع تلقائي، مش بيستبدل الترتيب.
-  /// A newer preview model, confirmed by direct testing (uploading a real
-  /// timetable and hand-checking the reply against the original) to read
-  /// dense tables noticeably more accurately than what normally ranks
-  /// first. Being "preview" means Google can change or retire it without
-  /// notice, so it is only tried first with an automatic fallback, not
-  /// substituted for ranking outright.
-  static const _preferredScheduleModel = 'gemini-3-flash-preview';
-
   /// بيتنادى قبل كل طلب توليد — العدّاد الوحيد الصادق للحصة.
   /// Called before each generation request; the only honest quota counter.
   final void Function(String model)? onRequest;
@@ -768,14 +756,6 @@ class GeminiSummarizer implements Summarizer {
       {
         'action': 'json',
         'model': config.requestedModel,
-        // اتأكد بالاختبار المباشر إنه بيقرا الجداول الكثيفة دي أدق من
-        // الموديل العادي المرتّب أول — متجاهلة لو المستخدم اختار موديل
-        // بعينه، ومع رجوع تلقائي للترتيب العادي لو مش متاح لمفتاحه.
-        // Confirmed by direct testing to read these dense tables more
-        // accurately than the normally-top-ranked model — ignored when the
-        // user picked a specific model, and falls back to normal ranking
-        // when unavailable on their key.
-        'preferred_model': _preferredScheduleModel,
         'system': StudyPrompt.scheduleStructureSystem,
         'prompt': StudyPrompt.scheduleStructurePrompt(text),
         if (files != null) 'files': files,
@@ -856,7 +836,6 @@ class GeminiSummarizer implements Summarizer {
           {
             'action': 'json',
             'model': config.requestedModel,
-            'preferred_model': _preferredScheduleModel,
             'system': StudyPrompt.scheduleEntriesSystem(
               timeColumns: timeColumns,
               groups: groups,
