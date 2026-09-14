@@ -790,17 +790,36 @@ class GeminiSummarizer implements Summarizer {
 
     final structure = decodeModelJson(structureResult);
 
-    // عناوين الأعمدة زي ما الموديل قراها حرفيًا — من غير ما نفترض شكل
-    // شبكة معيّن (منتظمة أو فيها فجوات)، عشان تشتغل مع أي جدول زي ما هو
-    // مكتوب فعليًا، مش بس الشكل اللي جرّبناه.
-    // The column labels exactly as the model read them — without assuming
-    // any particular grid shape (uniform or gapped), so it works with
-    // whatever a table actually prints rather than only the shape already
-    // tested.
-    final timeColumns = <String>[
-      for (final c in (structure?['time_columns'] as List?) ?? const [])
-        '$c'.trim(),
-    ]..removeWhere((c) => c.isEmpty);
+    // بنبني شريط الأعمدة إحنا بالحساب، مش بنسيب الموديل يعدّدها — تعدادها
+    // كان بيتلخبط ("استراحة" بتتكرر غلط، وترتيب غلط) حتى لما نطلبها صريحة.
+    // قراية بداية اليوم ونهايته وطول العمود مهمة أبسط بكتير وبتغلط أقل.
+    // We build the column ladder ourselves by arithmetic instead of letting
+    // the model enumerate it — enumeration kept getting scrambled ("Break"
+    // duplicated wrongly, out of order) even when asked for explicitly.
+    // Reading the day's start, end, and slot length is a much simpler task
+    // that errors far less.
+    final dayStartMin = ParsedLecture.minutesFromClock('${structure?['day_start'] ?? ''}');
+    final dayEndMin = ParsedLecture.minutesFromClock('${structure?['day_end'] ?? ''}');
+    final slotMinutes = num.tryParse('${structure?['slot_minutes'] ?? ''}')?.toInt() ?? 0;
+
+    final timeColumns = <String>[];
+    if (dayStartMin != null && dayEndMin != null && slotMinutes > 0) {
+      String clock(int m) =>
+          '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+      for (var t = dayStartMin; t < dayEndMin; t += slotMinutes) {
+        timeColumns.add('${clock(t)}-${clock(t + slotMinutes)}');
+      }
+    } else {
+      // شبكة مش منتظمة (فجوة بين عمودين، أو أعمدة أطوالها مختلفة) — مفيش
+      // حساب ممكن يبنيها، فبناخد عناوين الأعمدة زي ما الموديل قراها حرفيًا.
+      // An irregular grid (a gap between columns, or columns of different
+      // lengths) can't be built by arithmetic — take the column labels as
+      // the model read them verbatim instead.
+      for (final c in (structure?['time_columns'] as List?) ?? const []) {
+        final v = '$c'.trim();
+        if (v.isNotEmpty) timeColumns.add(v);
+      }
+    }
 
     final groups = <String>[];
     final rawGroups = structure?['groups'];
