@@ -811,20 +811,20 @@ class GeminiSummarizer implements Summarizer {
     }
     final groupLabel = '${structure?['group_label'] ?? ''}'.trim();
 
-    final days = <String>[
-      for (final d in (structure?['days'] as List?) ?? const []) '$d'.trim(),
-    ]..removeWhere((d) => d.isEmpty);
-
     // مرحلة 2: استخراج المحاضرات، شايلة تركيب المرحلة الأولى كحقيقة مؤكدة.
-    // لو الأيام معروفة، بنطلب كل يوم في نداء لوحده — جدول أسبوع كامل في رد
-    // واحد بيبقى تقيل وممكن ياخد وقت يقرب من مهلة السيرفر، ورد يوم واحد
-    // بيفضل صغير ودايمًا سريع.
+    // نداء واحد للأسبوع كله، مش نداء لكل يوم — الحصة المجانية طلعت 20 طلب
+    // في اليوم بس لكل مشروع؛ نداء لكل يوم (يوصل 6-7) كان بيخلّص الحصة كلها
+    // من محاولتين استيراد بس. سقف الـ maxOutputTokens (65536) اللي ضفناه
+    // بيمنع التقطيع (MAX_TOKENS) اللي كان سبب التقسيم أصلاً، فمعندناش داعي
+    // نضحي بالحصة عشانه تاني.
     // Phase 2: extract the lectures, carrying phase one's structure as an
-    // established fact. When the days are known, each is requested in its
-    // own call — a whole week in one reply gets heavy and can brush against
-    // the server's time ceiling, while a single day's reply stays small and
-    // reliably fast.
-    final dayScopes = days.isEmpty ? const <String?>[null] : days;
+    // established fact. One call for the whole week, not one per day — the
+    // free tier turned out to be just 20 requests per day per project; a
+    // per-day call (6-7 of them) was burning the entire daily quota in two
+    // import attempts. The maxOutputTokens ceiling (65536) already added
+    // prevents the truncation (MAX_TOKENS) that motivated the split in the
+    // first place, so there is no longer a reason to trade quota for it.
+    const dayScopes = <String?>[null];
     final rows = <dynamic>[];
     final failedDays = <String>[];
 
