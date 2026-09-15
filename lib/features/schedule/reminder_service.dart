@@ -37,39 +37,45 @@ class ReminderService extends Notifier<ReminderState> {
     if (on) {
       _timer = Timer.periodic(const Duration(seconds: 30), (_) => _sweep());
       scheduleMicrotask(_sweep);
+
+      // مستخدم قديم كان مفعّل التنبيهات قبل ما خاصية الـ Push تتضاف: الإذن
+      // ممنوح بالفعل، فمفيش داعي لضغطة جديدة — بنشترك على طول.
+      // A returning user who enabled reminders before push existed: permission
+      // is already granted, so no fresh gesture is needed — subscribe right
+      // away.
+      if (Reminders.isGranted) scheduleMicrotask(_subscribePush);
     }
 
     return ReminderState(enabled: on, permission: Reminders.permission);
   }
 
-  /// بيسأل المتصفح الإذن، وبعد الموافقة بيشترك في Push عشان التنبيه يوصل حتى
-  /// لو التطبيق مقفول. لازم يتنادى من ضغطة مستخدم.
-  /// Asks the browser for permission, then subscribes to push on approval so
-  /// the reminder arrives even with the app closed. Must come from a user
-  /// gesture.
+  /// بيسأل المتصفح الإذن، وبعد الموافقة بيشترك في Push. لازم يتنادى من ضغطة
+  /// مستخدم.
+  /// Asks the browser for permission, then subscribes to push on approval.
+  /// Must come from a user gesture.
   Future<bool> requestPermission() async {
     final granted = await Reminders.request();
     state = state.copyWith(permission: Reminders.permission);
-
-    if (granted) {
-      // فشل الاشتراك في Push مش سبب يمنع التنبيه المحلي (اللي شغال من غير
-      // Push أصلاً) — بنحاول بس من غير ما نوقف حاجة لو اتعطل.
-      // A failed push subscription is no reason to block the local reminder
-      // (which works without push anyway) — best-effort, nothing stops if
-      // it fails.
-      final keys = await WebPush.subscribe();
-      if (keys != null) {
-        try {
-          await ref.read(repositoryProvider).savePushSubscription(
-                endpoint: keys.endpoint,
-                p256dh: keys.p256dh,
-                auth: keys.auth,
-              );
-        } catch (_) {}
-      }
-    }
-
+    if (granted) await _subscribePush();
     return granted;
+  }
+
+  /// بيشترك في Push عشان التنبيه يوصل حتى لو التطبيق مقفول خالص. فشله مش
+  /// سبب يمنع التنبيه المحلي (اللي شغال من غير Push أصلاً) — بنحاول بس من
+  /// غير ما نوقف حاجة لو اتعطل.
+  /// Subscribes to push so the reminder arrives even with the app fully
+  /// closed. A failure here is no reason to block the local reminder (which
+  /// works without push anyway) — best-effort, nothing stops if it fails.
+  Future<void> _subscribePush() async {
+    final keys = await WebPush.subscribe();
+    if (keys == null) return;
+    try {
+      await ref.read(repositoryProvider).savePushSubscription(
+            endpoint: keys.endpoint,
+            p256dh: keys.p256dh,
+            auth: keys.auth,
+          );
+    } catch (_) {}
   }
 
   /// بيلغي اشتراك الـ Push بتاع الجهاز ده. بينادى لما المستخدم يقفل
