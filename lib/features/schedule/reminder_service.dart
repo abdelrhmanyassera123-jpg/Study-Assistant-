@@ -23,6 +23,17 @@ import '../../models/models.dart';
 class ReminderService extends Notifier<ReminderState> {
   Timer? _timer;
 
+  /// بيمنع نداءين لـ _subscribePush يشتغلوا في نفس اللحظة. من غيره، تفعيل
+  /// التنبيهات بيسبب نداءين متزامنين (واحد مباشر من requestPermission()،
+  /// وواحد من build() لما remindersOn يتغيّر) وكل واحد فيهم بيلاقي "مفيش
+  /// اشتراك موجود" في نفس اللحظة، فبيعمل اشتراك جديد لوحده — نسخة مكررة.
+  /// Guards against two _subscribePush calls running at the same moment.
+  /// Without it, turning reminders on triggers two concurrent calls (one
+  /// direct from requestPermission(), one from build() reacting to
+  /// remindersOn changing) and each sees "no existing subscription" at the
+  /// same instant, so each creates its own — a duplicate.
+  bool _subscribing = false;
+
   /// اللي طلع خلاص — عشان ما يطلعش تاني في نفس النافذة.
   /// What has already fired, so it does not fire twice in the same window.
   final Set<String> _fired = {};
@@ -68,15 +79,21 @@ class ReminderService extends Notifier<ReminderState> {
   /// closed. A failure here is no reason to block the local reminder (which
   /// works without push anyway) — best-effort, nothing stops if it fails.
   Future<void> _subscribePush() async {
-    final keys = await WebPush.subscribe();
-    if (keys == null) return;
+    if (_subscribing) return;
+    _subscribing = true;
     try {
-      await ref.read(repositoryProvider).savePushSubscription(
-            endpoint: keys.endpoint,
-            p256dh: keys.p256dh,
-            auth: keys.auth,
-          );
-    } catch (_) {}
+      final keys = await WebPush.subscribe();
+      if (keys == null) return;
+      try {
+        await ref.read(repositoryProvider).savePushSubscription(
+              endpoint: keys.endpoint,
+              p256dh: keys.p256dh,
+              auth: keys.auth,
+            );
+      } catch (_) {}
+    } finally {
+      _subscribing = false;
+    }
   }
 
   /// بيلغي اشتراك الـ Push بتاع الجهاز ده. بينادى لما المستخدم يقفل
@@ -169,10 +186,16 @@ class ReminderService extends Notifier<ReminderState> {
       vibrate: prefs.vibrateOn ? const [200, 100, 200] : const [],
     );
 
+    // -1 يميّز "الطلب فشل" عن "0 جهاز مشترك" — قبل كده كانوا بيتلخبطوا في
+    // نفس الرسالة، وده كان بيخبّي مشكلة CORS حقيقية وراء رسالة "مفيش
+    // اشتراك" المضلّلة.
+    // -1 distinguishes "the request failed" from "0 subscribed devices" —
+    // they used to collapse into the same message, which hid a real CORS
+    // bug behind a misleading "no subscription" message.
     try {
       return await ref.read(repositoryProvider).sendTestPush();
     } catch (_) {
-      return 0;
+      return -1;
     }
   }
 }

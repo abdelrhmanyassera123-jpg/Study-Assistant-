@@ -488,15 +488,24 @@ class AppL10n {
   String get notificationCustomTextReset => _('رجّع الافتراضي', 'Reset to default');
   String get notificationSaved => _('اتحفظ.', 'Saved.');
   String get sendTestNotification => _('جرّب الإشعار الآن', 'Send a test notification');
-  String testNotificationResult(int devicesReached) => devicesReached > 0
-      ? _(
-          'التنبيه المحلي طلع، ووصل Push لـ $devicesReached جهاز.',
-          'The local reminder fired, and push reached $devicesReached device(s).',
-        )
-      : _(
-          'التنبيه المحلي طلع، بس مفيش اشتراك Push شغال — جرّب تقفل وتفتح التنبيهات.',
-          'The local reminder fired, but there is no active push subscription — try turning reminders off and back on.',
-        );
+  String testNotificationResult(int devicesReached) {
+    if (devicesReached < 0) {
+      return _(
+        'التنبيه المحلي طلع، بس طلب الـ Push فشل (مشكلة اتصال أو سيرفر) — جرّب تاني كمان شوية.',
+        'The local reminder fired, but the push request itself failed (a connection or server issue) — try again shortly.',
+      );
+    }
+    if (devicesReached == 0) {
+      return _(
+        'التنبيه المحلي طلع، بس مفيش اشتراك Push شغال — جرّب تقفل وتفتح التنبيهات.',
+        'The local reminder fired, but there is no active push subscription — try turning reminders off and back on.',
+      );
+    }
+    return _(
+      'التنبيه المحلي طلع، ووصل Push لـ $devicesReached جهاز.',
+      'The local reminder fired, and push reached $devicesReached device(s).',
+    );
+  }
   String get testLectureTitle => _('محاضرة تجريبية', 'Test lecture');
   String get testLectureLocation => _('قاعة تجريبية', 'Test hall');
   String get testLectureLecturer => _('د. تجريبي', 'Dr. Test');

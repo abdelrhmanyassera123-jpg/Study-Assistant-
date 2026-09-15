@@ -70,21 +70,45 @@ const DEFAULT_PREFS: NotificationPrefsRow = {
   default_remind_minutes: 15,
 };
 
+// الكرون بس هو اللي بينادي بدون CORS (سيرفر لسيرفر)، لكن زرار "جرّب
+// الإشعار" جاي من المتصفح — لازم preflight ورد فيه CORS headers، وإلا
+// المتصفح بيمنع الطلب قبل ما يوصل هنا خالص ويطلع خطأ عام مش واضح سببه.
+// Only the cron calls this without CORS (server-to-server), but the "test
+// notification" button comes from the browser — it needs a preflight and a
+// response carrying CORS headers, or the browser blocks the request before
+// it ever reaches here and surfaces an unhelpful generic error.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-    return new Response("missing configuration", { status: 500 });
+    return withCors(new Response("missing configuration", { status: 500 }));
   }
 
   if (CRON_SECRET && req.headers.get("x-cron-secret") === CRON_SECRET) {
-    return await handleCronTick();
+    return withCors(await handleCronTick());
   }
 
   const auth = req.headers.get("Authorization");
   if (auth) {
-    return await handleTestPush(auth);
+    return withCors(await handleTestPush(auth));
   }
 
-  return new Response("unauthorized", { status: 401 });
+  return withCors(new Response("unauthorized", { status: 401 }));
 });
 
 /// المسار المجدول: بيدوّر على أي محاضرة مستحق ليها تنبيه دلوقتي ويبعته.
@@ -229,7 +253,7 @@ async function handleTestPush(auth: string): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ sent }), {
+  return new Response(JSON.stringify({ sent, found: subs.length }), {
     headers: { "Content-Type": "application/json" },
   });
 }
