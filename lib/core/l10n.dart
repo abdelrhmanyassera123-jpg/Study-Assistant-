@@ -466,8 +466,8 @@ class AppL10n {
         "Open the site's settings in your browser and allow notifications.",
       );
   String get remindersNeedOpenTab => _(
-        'التنبيه بيطلع والتطبيق مفتوح، حتى لو في تبويب ورا.',
-        'Reminders arrive while the app is open, even in a background tab.',
+        'التنبيه بيوصل حتى لو التطبيق مقفول خالص.',
+        'Reminders arrive even with the app fully closed.',
       );
 
   String remindBefore(int minutes) => isAr

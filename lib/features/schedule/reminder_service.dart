@@ -6,6 +6,7 @@ import 'package:web/web.dart' as web;
 
 import '../../core/l10n.dart';
 import '../../core/notifications.dart';
+import '../../core/push.dart';
 import '../../core/settings.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
@@ -41,12 +42,46 @@ class ReminderService extends Notifier<ReminderState> {
     return ReminderState(enabled: on, permission: Reminders.permission);
   }
 
-  /// بيسأل المتصفح الإذن — لازم من ضغطة مستخدم.
-  /// Asks the browser for permission; must come from a user gesture.
+  /// بيسأل المتصفح الإذن، وبعد الموافقة بيشترك في Push عشان التنبيه يوصل حتى
+  /// لو التطبيق مقفول. لازم يتنادى من ضغطة مستخدم.
+  /// Asks the browser for permission, then subscribes to push on approval so
+  /// the reminder arrives even with the app closed. Must come from a user
+  /// gesture.
   Future<bool> requestPermission() async {
     final granted = await Reminders.request();
     state = state.copyWith(permission: Reminders.permission);
+
+    if (granted) {
+      // فشل الاشتراك في Push مش سبب يمنع التنبيه المحلي (اللي شغال من غير
+      // Push أصلاً) — بنحاول بس من غير ما نوقف حاجة لو اتعطل.
+      // A failed push subscription is no reason to block the local reminder
+      // (which works without push anyway) — best-effort, nothing stops if
+      // it fails.
+      final keys = await WebPush.subscribe();
+      if (keys != null) {
+        try {
+          await ref.read(repositoryProvider).savePushSubscription(
+                endpoint: keys.endpoint,
+                p256dh: keys.p256dh,
+                auth: keys.auth,
+              );
+        } catch (_) {}
+      }
+    }
+
     return granted;
+  }
+
+  /// بيلغي اشتراك الـ Push بتاع الجهاز ده. بينادى لما المستخدم يقفل
+  /// التنبيهات بنفسه.
+  /// Cancels this device's push subscription. Called when the user switches
+  /// reminders off themselves.
+  Future<void> disablePush() async {
+    final endpoint = await WebPush.unsubscribe();
+    if (endpoint == null) return;
+    try {
+      await ref.read(repositoryProvider).deletePushSubscription(endpoint);
+    } catch (_) {}
   }
 
   void _sweep() {

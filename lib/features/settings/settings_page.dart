@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -218,6 +220,9 @@ class _RemindersCard extends ConsumerWidget {
                 : (on) async {
                     if (!on) {
                       ref.read(settingsProvider.notifier).setReminders(false);
+                      unawaited(ref
+                          .read(reminderServiceProvider.notifier)
+                          .disablePush());
                       return;
                     }
                     // الإذن بيتطلب من الضغطة دي بالظبط: المتصفح بيرفض السؤال

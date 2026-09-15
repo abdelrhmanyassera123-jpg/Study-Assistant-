@@ -262,4 +262,27 @@ class Repository {
 
   Future<void> deleteGeminiKey() =>
       _db.from('user_api_keys').delete().eq('user_id', _uid);
+
+  // -------------------------------------------------------- push subscriptions
+  /// بيحفظ اشتراك Push بتاع الجهاز ده، مستبدلًا القديم لو نفس الـ endpoint
+  /// موجود بالفعل (المتصفح بيرجّع نفس الاشتراك لو اتسأل تاني).
+  /// Saves this device's push subscription, replacing an earlier one for the
+  /// same endpoint if it already exists (the browser returns the same
+  /// subscription when asked again).
+  Future<void> savePushSubscription({
+    required String endpoint,
+    required String p256dh,
+    required String auth,
+  }) =>
+      _db.from('push_subscriptions').upsert({
+        'user_id': _uid,
+        'endpoint': endpoint,
+        'p256dh': p256dh,
+        'auth': auth,
+      }, onConflict: 'endpoint');
+
+  Future<void> deletePushSubscription(String endpoint) => _db
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint);
 }
