@@ -66,6 +66,21 @@
       boot.classList.add('done');
       setTimeout(function () { boot.remove(); }, 300);
     });
+
+    // Service worker فلاتر بيلغي تسجيل نفسه على طول (تنظيف كاش قديم)، فكروم
+    // مش بيلاقي service worker مسجّل وقت ما بيقرر يعرض "تثبيت التطبيق" — وده
+    // بيخلّيه يرجع لخيار "إضافة اختصار" بس. الملف ده منفصل تمامًا وبيفضل
+    // مسجّل عشان يحقق الشرط ده.
+    //
+    // Flutter's own service worker unregisters itself immediately (old-cache
+    // cleanup), so Chrome finds nothing registered when it decides whether to
+    // offer "Install app" and falls back to "Add shortcut" only. This one is
+    // separate and stays registered so that check passes.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('pwa-sw.js').catch(function () {});
+      });
+    }
   </script>
 
   <script src="flutter_bootstrap.js" async></script>
