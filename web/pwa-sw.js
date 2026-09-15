@@ -53,6 +53,8 @@ self.addEventListener("push", (event) => {
     tag: data.tag || undefined,
     icon: "icons/Icon-192.png",
     badge: "icons/Icon-192.png",
+    silent: !!data.silent,
+    vibrate: Array.isArray(data.vibrate) ? data.vibrate : [200, 100, 200],
     data: { url: "./" },
   };
 

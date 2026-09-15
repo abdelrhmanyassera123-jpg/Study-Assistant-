@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-/// تنبيهات المحاضرات في المتصفح.
-/// Lecture reminders, through the browser.
+/// تنبيهات المحاضرات المحلية — بتطلّع من الصفحة نفسها وهي مفتوحة.
+/// Local lecture reminders — raised from the page itself while it is open.
 ///
-/// التنبيه بيطلع من المتصفح نفسه، فبيبان حتى لو التبويب في الخلفية. بس لو
-/// الصفحة اتقفلت خالص مفيش حاجة شغالة تطلّعه — ده محتاج Service Worker و
-/// Push من سيرفر، وده مش موجود هنا.
-/// The notification comes from the browser itself, so it shows even when the
-/// tab is in the background. But with the page fully closed nothing is running
-/// to raise it — that needs a service worker and a push server, which this app
-/// does not have.
+/// ده مسار واحد بس. التنبيه اللي بيوصل حتى لو التطبيق مقفول خالص جاي من
+/// [WebPush] بدالها (core/push.dart) عن طريق فنكشن send-reminders.
+/// This is only one path. The reminder that arrives even with the app fully
+/// closed comes from [WebPush] instead (core/push.dart) via the
+/// send-reminders function.
 class Reminders {
   const Reminders._();
 
@@ -51,9 +50,17 @@ class Reminders {
   }
 
   /// بيطلّع تنبيه. الـ [tag] بيمنع تكرار نفس التنبيه لو اتنادى مرتين.
+  /// [silent] و[vibrate] بيتحكموا في الصوت والاهتزاز — من تخصيص المستخدم.
   /// Raises a notification. The [tag] stops the same one appearing twice if it
-  /// is raised again.
-  static void show(String title, {required String body, String? tag}) {
+  /// is raised again. [silent] and [vibrate] come from the user's own
+  /// customization.
+  static void show(
+    String title, {
+    required String body,
+    String? tag,
+    bool silent = false,
+    List<int> vibrate = const [200, 100, 200],
+  }) {
     if (!isGranted) return;
     try {
       web.Notification(
@@ -61,10 +68,8 @@ class Reminders {
         web.NotificationOptions(
           body: body,
           tag: tag ?? '',
-          // مش بيصدر صوت من نفسه: التنبيه وسط محاضرة تانية أسوأ من إنه يفوت.
-          // No sound of its own: a chime in the middle of another lecture is
-          // worse than a reminder that goes unheard.
-          silent: false,
+          vibrate: Int32List.fromList(vibrate).toJS,
+          silent: silent,
           requireInteraction: false,
         ),
       );

@@ -10,17 +10,24 @@
 // responsible for the reminder — so it arrives even with the app fully
 // closed, not just a background tab.
 //
-// الفنكشن دي منشورة بـ --no-verify-jwt: مفيش مستخدم بينادي عليها، الكرون
-// نفسه هو اللي بينادي، فالتحقق بيبقى بمقارنة هيدر "x-cron-secret" بسر مخزّن
-// كإعداد على مستوى الداتابيز (شوف الـ migration).
+// الفنكشن دي منشورة بـ --no-verify-jwt ومسارين بيوصلولها:
+//  • الكرون: هيدر "x-cron-secret" بيتقارن بسر مخزّن في Supabase Vault (شوف
+//    الـ migration) — ده اللي بيمسح الجدول ويبعت أي تنبيه مستحق.
+//  • زرار "جرّب الإشعار" في التطبيق: طلب فيه Authorization بتاع المستخدم
+//    نفسه، وبيبعت له بس تنبيه تجربة على اشتراكاته.
 //
-// Deployed with --no-verify-jwt: no user calls this, only the cron job does,
-// so the check is comparing the "x-cron-secret" header against a secret
-// stored as a database-level setting (see the migration).
+// Deployed with --no-verify-jwt, with two paths reaching it:
+//  • The cron: an "x-cron-secret" header checked against a secret stored in
+//    Supabase Vault (see the migration) — this is what scans the table and
+//    sends any due reminder.
+//  • The "test notification" button in the app: a request carrying the
+//    user's own Authorization, which only gets a test push on their own
+//    subscriptions.
 // =====================================================================
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
@@ -49,14 +56,41 @@ interface PushSubscriptionRow {
   auth: string;
 }
 
+interface NotificationPrefsRow {
+  sound_on: boolean;
+  vibrate_on: boolean;
+  custom_body: string | null;
+  default_remind_minutes: number;
+}
+
+const DEFAULT_PREFS: NotificationPrefsRow = {
+  sound_on: true,
+  vibrate_on: true,
+  custom_body: null,
+  default_remind_minutes: 15,
+};
+
 Deno.serve(async (req) => {
-  if (req.headers.get("x-cron-secret") !== CRON_SECRET || !CRON_SECRET) {
-    return new Response("unauthorized", { status: 401 });
-  }
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     return new Response("missing configuration", { status: 500 });
   }
 
+  if (CRON_SECRET && req.headers.get("x-cron-secret") === CRON_SECRET) {
+    return await handleCronTick();
+  }
+
+  const auth = req.headers.get("Authorization");
+  if (auth) {
+    return await handleTestPush(auth);
+  }
+
+  return new Response("unauthorized", { status: 401 });
+});
+
+/// المسار المجدول: بيدوّر على أي محاضرة مستحق ليها تنبيه دلوقتي ويبعته.
+/// The scheduled path: scans for any lecture due a reminder right now and
+/// sends it.
+async function handleCronTick(): Promise<Response> {
   const now = new Date();
   const { weekday: currentWeekday, minutes: currentMinutes, offsetMinutes } =
     cairoWallClock(now);
@@ -90,18 +124,26 @@ Deno.serve(async (req) => {
 
   let sent = 0;
   let errors = 0;
+  const prefsCache = new Map<string, NotificationPrefsRow>();
 
   for (const { entry, occurrenceAt } of due) {
     const claimed = await claimReminder(entry.id, occurrenceAt);
     if (!claimed) continue; // already sent by an earlier tick
 
-    const subs = await fetchSubscriptions(entry.user_id);
+    const subs = await fetchSubscriptionsAsService(entry.user_id);
     if (subs.length === 0) continue;
 
-    const minutesLeft = entry.remind_minutes;
-    const body = entry.location.trim()
-      ? `${reminderBody(minutesLeft)} · ${entry.location.trim()}`
-      : reminderBody(minutesLeft);
+    if (!prefsCache.has(entry.user_id)) {
+      prefsCache.set(entry.user_id, await fetchPrefsAsService(entry.user_id));
+    }
+    const prefs = prefsCache.get(entry.user_id)!;
+
+    const body = applyTemplate(prefs.custom_body, {
+      minutes: entry.remind_minutes,
+      location: entry.location.trim(),
+      lecture: entry.title,
+      lecturer: "",
+    });
 
     for (const sub of subs) {
       try {
@@ -109,12 +151,14 @@ Deno.serve(async (req) => {
           title: entry.title,
           body,
           tag: entry.id,
+          silent: !prefs.sound_on,
+          vibrate: prefs.vibrate_on ? [200, 100, 200] : [],
         });
         sent++;
       } catch (err) {
         errors++;
         if (err instanceof PushGoneError) {
-          await deleteSubscription(sub.id);
+          await deleteSubscriptionAsService(sub.id);
         } else {
           console.error("push failed", entry.id, sub.id, err);
         }
@@ -126,7 +170,90 @@ Deno.serve(async (req) => {
     JSON.stringify({ checked: entries.length, due: due.length, sent, errors }),
     { headers: { "Content-Type": "application/json" } },
   );
-});
+}
+
+/// زرار "جرّب الإشعار": بيبعت تنبيه تجربة بس على اشتراكات المستخدم اللي
+/// بينادي، عن طريق RLS بمفتاح anon + الـ Authorization بتاعه — مفيش داعي
+/// لـ service role هنا.
+/// The "test notification" button: sends a test push only to the calling
+/// user's own subscriptions, scoped by RLS via the anon key + their own
+/// Authorization — no service role needed here.
+async function handleTestPush(auth: string): Promise<Response> {
+  const headers = { apikey: ANON_KEY, Authorization: auth };
+
+  const [subsRes, prefsRes] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=id,endpoint,p256dh,auth`, {
+      headers,
+    }),
+    fetch(`${SUPABASE_URL}/rest/v1/notification_prefs?select=*`, { headers }),
+  ]);
+
+  if (!subsRes.ok) {
+    return new Response(JSON.stringify({ sent: 0, error: "unauthorized" }), {
+      status: subsRes.status === 401 ? 401 : 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const subs: PushSubscriptionRow[] = await subsRes.json();
+  const prefsRows: NotificationPrefsRow[] = prefsRes.ok ? await prefsRes.json() : [];
+  const prefs = prefsRows[0] ?? DEFAULT_PREFS;
+
+  const body = applyTemplate(prefs.custom_body, {
+    minutes: prefs.default_remind_minutes,
+    location: "قاعة تجريبية",
+    lecture: "محاضرة تجريبية",
+    lecturer: "د. تجريبي",
+  });
+
+  let sent = 0;
+  for (const sub of subs) {
+    try {
+      await sendWebPush(sub, {
+        title: "محاضرة تجريبية",
+        body,
+        tag: "test",
+        silent: !prefs.sound_on,
+        vibrate: prefs.vibrate_on ? [200, 100, 200] : [],
+      });
+      sent++;
+    } catch (err) {
+      if (err instanceof PushGoneError) {
+        // مفيش service role هنا، فمينفعش نمسح الاشتراك — هيتلغي لوحده أول
+        // تنبيه حقيقي جاي.
+        // No service role here, so the subscription cannot be deleted — it
+        // will be cleaned up on the next real reminder instead.
+      } else {
+        console.error("test push failed", sub.id, err);
+      }
+    }
+  }
+
+  return new Response(JSON.stringify({ sent }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/// القالب المخصص لو موجود، وإلا الصيغة الافتراضية — نفس منطق
+/// buildReminderBody في lib/core/notification_text.dart بالظبط.
+/// The custom template when set, otherwise the default wording — mirrors
+/// buildReminderBody in lib/core/notification_text.dart exactly.
+function applyTemplate(
+  custom: string | null | undefined,
+  vars: { minutes: number; location: string; lecture: string; lecturer: string },
+): string {
+  const trimmed = custom?.trim();
+  if (!trimmed) {
+    return vars.location
+      ? `${reminderBody(vars.minutes)} · ${vars.location}`
+      : reminderBody(vars.minutes);
+  }
+  return trimmed
+    .replaceAll("{minutes}", String(vars.minutes))
+    .replaceAll("{location}", vars.location)
+    .replaceAll("{lecture}", vars.lecture)
+    .replaceAll("{lecturer}", vars.lecturer);
+}
 
 // =====================================================================
 // الوقت — حساب "المحاضرة الجاية" بتوقيت القاهرة من غير مكتبة Temporal
@@ -236,7 +363,7 @@ async function fetchDueEntries(): Promise<ScheduleEntryRow[]> {
   return await res.json();
 }
 
-async function fetchSubscriptions(userId: string): Promise<PushSubscriptionRow[]> {
+async function fetchSubscriptionsAsService(userId: string): Promise<PushSubscriptionRow[]> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/push_subscriptions?select=id,endpoint,p256dh,auth&user_id=eq.${userId}`,
     { headers: restHeaders() },
@@ -245,7 +372,17 @@ async function fetchSubscriptions(userId: string): Promise<PushSubscriptionRow[]
   return await res.json();
 }
 
-async function deleteSubscription(id: string): Promise<void> {
+async function fetchPrefsAsService(userId: string): Promise<NotificationPrefsRow> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/notification_prefs?select=*&user_id=eq.${userId}`,
+    { headers: restHeaders() },
+  );
+  if (!res.ok) return DEFAULT_PREFS;
+  const rows: NotificationPrefsRow[] = await res.json();
+  return rows[0] ?? DEFAULT_PREFS;
+}
+
+async function deleteSubscriptionAsService(id: string): Promise<void> {
   await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?id=eq.${id}`, {
     method: "DELETE",
     headers: restHeaders(),
@@ -285,7 +422,13 @@ class PushGoneError extends Error {}
 
 async function sendWebPush(
   sub: PushSubscriptionRow,
-  payload: { title: string; body: string; tag: string },
+  payload: {
+    title: string;
+    body: string;
+    tag: string;
+    silent?: boolean;
+    vibrate?: number[];
+  },
 ): Promise<void> {
   const endpointOrigin = new URL(sub.endpoint).origin;
   const vapidHeader = await buildVapidHeader(endpointOrigin);

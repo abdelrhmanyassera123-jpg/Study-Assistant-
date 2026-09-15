@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../../core/l10n.dart';
+import '../../core/notification_text.dart';
 import '../../core/notifications.dart';
 import '../../core/push.dart';
 import '../../core/settings.dart';
@@ -120,15 +121,59 @@ class ReminderService extends Notifier<ReminderState> {
 
   void _raise(ScheduleEntry entry, DateTime due) {
     final l = ref.read(l10nProvider);
+    final prefs = ref.read(notificationPrefsProvider).value ?? const NotificationPrefs();
     final minutes = due.difference(DateTime.now()).inMinutes;
 
-    final where = entry.location.trim();
-    final body = where.isEmpty
-        ? l.reminderBody(minutes)
-        : '${l.reminderBody(minutes)} · $where';
+    final body = buildReminderBody(
+      l,
+      prefs,
+      minutes: minutes,
+      location: entry.location.trim(),
+      lecture: entry.title,
+      lecturer: entry.lecturer.trim(),
+    );
 
-    Reminders.show(entry.title, body: body, tag: entry.id);
+    Reminders.show(
+      entry.title,
+      body: body,
+      tag: entry.id,
+      silent: !prefs.soundOn,
+      vibrate: prefs.vibrateOn ? const [200, 100, 200] : const [],
+    );
     state = state.copyWith(last: ReminderShot(entry: entry, at: DateTime.now()));
+  }
+
+  /// بيطلّع تنبيه تجربة فورًا (محلي)، وبيحاول يبعت تنبيه Push حقيقي كمان لو
+  /// فيه اشتراك — عشان يتأكد المسارين شغالين مع تخصيصاته الحالية.
+  /// Raises a test reminder right away (local), and also tries a real push
+  /// if there is a subscription — to confirm both paths work with the
+  /// current customization.
+  Future<int> sendTest() async {
+    final l = ref.read(l10nProvider);
+    final prefs = ref.read(notificationPrefsProvider).value ?? const NotificationPrefs();
+    final title = l.testLectureTitle;
+    final body = buildReminderBody(
+      l,
+      prefs,
+      minutes: prefs.defaultRemindMinutes,
+      location: l.testLectureLocation,
+      lecture: title,
+      lecturer: l.testLectureLecturer,
+    );
+
+    Reminders.show(
+      title,
+      body: body,
+      tag: 'test',
+      silent: !prefs.soundOn,
+      vibrate: prefs.vibrateOn ? const [200, 100, 200] : const [],
+    );
+
+    try {
+      return await ref.read(repositoryProvider).sendTestPush();
+    } catch (_) {
+      return 0;
+    }
   }
 }
 

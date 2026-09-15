@@ -44,6 +44,13 @@ final scheduleProvider = FutureProvider<List<ScheduleEntry>>(
   (ref) => ref.watch(repositoryProvider).scheduleEntries(),
 );
 
+/// تخصيص التنبيه — صوت واهتزاز ونص ومدة افتراضية.
+/// Notification customization — sound, vibration, text, and a default lead
+/// time.
+final notificationPrefsProvider = FutureProvider<NotificationPrefs>(
+  (ref) => ref.watch(repositoryProvider).notificationPrefs(),
+);
+
 /// بروفايلات الشكل حسب المادة.
 /// Look profiles by subject.
 final styleProfilesProvider = FutureProvider<Map<String?, Map<String, dynamic>>>(

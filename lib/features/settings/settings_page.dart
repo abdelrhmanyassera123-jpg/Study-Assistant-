@@ -7,7 +7,9 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
 import '../../data/providers.dart';
+import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../schedule/lecture_editor.dart' show reminderChoices;
 import '../schedule/reminder_service.dart';
 import '../summarize/model_settings_sheet.dart';
 import '../summarize/style_samples_page.dart';
@@ -118,6 +120,8 @@ class SettingsPage extends ConsumerWidget {
 
             SectionHeader(l.reminders, subtitle: l.remindersHint),
             const _RemindersCard(),
+            const SizedBox(height: Insets.md),
+            const _NotificationCustomizeCard(),
 
             SectionHeader(l.studyTools, subtitle: l.studyToolsHint),
             AppCard(
@@ -252,6 +256,163 @@ class _RemindersCard extends ConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// تخصيص شكل التنبيه — صوت، اهتزاز، نص مخصص، ومدة افتراضية لمحاضرة جديدة.
+/// Notification look and feel — sound, vibration, custom text, and a
+/// default lead time for a new lecture.
+class _NotificationCustomizeCard extends ConsumerStatefulWidget {
+  const _NotificationCustomizeCard();
+
+  @override
+  ConsumerState<_NotificationCustomizeCard> createState() =>
+      _NotificationCustomizeCardState();
+}
+
+class _NotificationCustomizeCardState
+    extends ConsumerState<_NotificationCustomizeCard> {
+  final _customBody = TextEditingController();
+  bool _seeded = false;
+  bool _busy = false;
+  bool _testing = false;
+
+  @override
+  void dispose() {
+    _customBody.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save(NotificationPrefs next) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(repositoryProvider).saveNotificationPrefs(next);
+      ref.invalidate(notificationPrefsProvider);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final async = ref.watch(notificationPrefsProvider);
+
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (prefs) {
+        // بنملى الحقل أول مرة بس — عشان لمسة المستخدم ما تتمسحش لو الداتا
+        // اتحملت تاني بعد حفظ.
+        // Seeded only the first time — so a fresh reload after saving does
+        // not wipe what the user is typing.
+        if (!_seeded) {
+          _customBody.text = prefs.customBody ?? '';
+          _seeded = true;
+        }
+
+        return AppCard(
+          padding: Insets.lg,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: prefs.soundOn,
+                title: Text(l.notificationSound),
+                onChanged:
+                    _busy ? null : (v) => _save(prefs.copyWith(soundOn: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: prefs.vibrateOn,
+                title: Text(l.notificationVibrate),
+                onChanged:
+                    _busy ? null : (v) => _save(prefs.copyWith(vibrateOn: v)),
+              ),
+              const SizedBox(height: Insets.lg),
+              _FieldLabel(l.notificationDefaultLead),
+              DropdownButtonFormField<int?>(
+                initialValue: reminderChoices.contains(prefs.defaultRemindMinutes)
+                    ? prefs.defaultRemindMinutes
+                    : 15,
+                items: [
+                  for (final choice in reminderChoices.whereType<int>())
+                    DropdownMenuItem(
+                      value: choice,
+                      child: Text(l.remindBefore(choice)),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (v) {
+                        if (v != null) _save(prefs.copyWith(defaultRemindMinutes: v));
+                      },
+              ),
+              const SizedBox(height: Insets.xl),
+              _FieldLabel(l.notificationCustomTextLabel),
+              TextField(
+                controller: _customBody,
+                minLines: 2,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: l.notificationCustomTextHint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: Insets.sm),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            _customBody.clear();
+                            _save(prefs.copyWith(clearCustomBody: true));
+                          },
+                    child: Text(l.notificationCustomTextReset),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            await _save(prefs.copyWith(customBody: _customBody.text));
+                            if (context.mounted) {
+                              showSnack(context, l.notificationSaved);
+                            }
+                          },
+                    child: Text(l.save),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Insets.lg),
+              OutlinedButton.icon(
+                icon: _testing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.notifications_active_outlined),
+                label: Text(l.sendTestNotification),
+                onPressed: _testing
+                    ? null
+                    : () async {
+                        setState(() => _testing = true);
+                        final devices = await ref
+                            .read(reminderServiceProvider.notifier)
+                            .sendTest();
+                        if (!context.mounted) return;
+                        setState(() => _testing = false);
+                        showSnack(context, l.testNotificationResult(devices));
+                      },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

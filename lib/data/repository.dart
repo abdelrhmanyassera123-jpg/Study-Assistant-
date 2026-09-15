@@ -285,4 +285,24 @@ class Repository {
       .from('push_subscriptions')
       .delete()
       .eq('endpoint', endpoint);
+
+  // ------------------------------------------------------- notification prefs
+  Future<NotificationPrefs> notificationPrefs() async {
+    final row = await _db.from('notification_prefs').select().maybeSingle();
+    return row == null ? const NotificationPrefs() : NotificationPrefs.fromMap(row);
+  }
+
+  Future<void> saveNotificationPrefs(NotificationPrefs prefs) =>
+      _db.from('notification_prefs').upsert(prefs.toUpsert(_uid));
+
+  /// بيبعت تنبيه تجربة على أي اشتراك Push للمستخدم ده. بيرجّع عدد الأجهزة
+  /// اللي وصلها، أو 0 لو مفيش اشتراك أصلاً.
+  /// Sends a test notification to any of this user's push subscriptions.
+  /// Returns how many devices it reached, or 0 if there is no subscription.
+  Future<int> sendTestPush() async {
+    final res = await _db.functions.invoke('send-reminders', body: {'test': true});
+    final data = res.data;
+    if (data is Map && data['sent'] is num) return (data['sent'] as num).toInt();
+    return 0;
+  }
 }

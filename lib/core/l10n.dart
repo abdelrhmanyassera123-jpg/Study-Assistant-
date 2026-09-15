@@ -474,6 +474,33 @@ class AppL10n {
       ? 'قبلها بـ $minutes دقيقة'
       : '$minutes min before';
 
+  // تخصيص التنبيه / notification customization
+  String get notificationCustomize => _('تخصيص التنبيه', 'Customize notifications');
+  String get notificationSound => _('الصوت', 'Sound');
+  String get notificationVibrate => _('الاهتزاز', 'Vibration');
+  String get notificationDefaultLead =>
+      _('المدة الافتراضية لمحاضرة جديدة', 'Default lead time for a new lecture');
+  String get notificationCustomTextLabel => _('نص التنبيه', 'Reminder text');
+  String get notificationCustomTextHint => _(
+        'سيب فاضي عشان الصيغة الافتراضية. تقدر تستخدم: {minutes} {location} {lecture} {lecturer}',
+        'Leave empty for the default wording. You can use: {minutes} {location} {lecture} {lecturer}',
+      );
+  String get notificationCustomTextReset => _('رجّع الافتراضي', 'Reset to default');
+  String get notificationSaved => _('اتحفظ.', 'Saved.');
+  String get sendTestNotification => _('جرّب الإشعار الآن', 'Send a test notification');
+  String testNotificationResult(int devicesReached) => devicesReached > 0
+      ? _(
+          'التنبيه المحلي طلع، ووصل Push لـ $devicesReached جهاز.',
+          'The local reminder fired, and push reached $devicesReached device(s).',
+        )
+      : _(
+          'التنبيه المحلي طلع، بس مفيش اشتراك Push شغال — جرّب تقفل وتفتح التنبيهات.',
+          'The local reminder fired, but there is no active push subscription — try turning reminders off and back on.',
+        );
+  String get testLectureTitle => _('محاضرة تجريبية', 'Test lecture');
+  String get testLectureLocation => _('قاعة تجريبية', 'Test hall');
+  String get testLectureLecturer => _('د. تجريبي', 'Dr. Test');
+
   /// نص التنبيه نفسه — بيتقرا وهو طالع من المتصفح.
   /// The reminder's own text, read as it comes out of the browser.
   String reminderBody(int minutes) {

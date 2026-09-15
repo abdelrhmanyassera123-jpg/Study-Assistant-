@@ -513,3 +513,58 @@ class ScheduleEntry {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }
+
+/// تخصيص التنبيه — صوت، اهتزاز، نص، والمدة الافتراضية لمحاضرة جديدة.
+/// بيتقرا من التطبيق (التنبيه المحلي) ومن فنكشن send-reminders (Push)
+/// عشان الاتنين يطلعوا بنفس الشكل.
+/// Notification customization — sound, vibration, text, and the default lead
+/// time for a new lecture. Read both by the app (local reminder) and by the
+/// send-reminders function (push) so both come out looking the same.
+@immutable
+class NotificationPrefs {
+  const NotificationPrefs({
+    this.soundOn = true,
+    this.vibrateOn = true,
+    this.customBody,
+    this.defaultRemindMinutes = 15,
+  });
+
+  final bool soundOn;
+  final bool vibrateOn;
+
+  /// null = الصيغة الافتراضية.
+  /// null = the default wording.
+  final String? customBody;
+
+  final int defaultRemindMinutes;
+
+  NotificationPrefs copyWith({
+    bool? soundOn,
+    bool? vibrateOn,
+    String? customBody,
+    bool clearCustomBody = false,
+    int? defaultRemindMinutes,
+  }) =>
+      NotificationPrefs(
+        soundOn: soundOn ?? this.soundOn,
+        vibrateOn: vibrateOn ?? this.vibrateOn,
+        customBody: clearCustomBody ? null : (customBody ?? this.customBody),
+        defaultRemindMinutes: defaultRemindMinutes ?? this.defaultRemindMinutes,
+      );
+
+  factory NotificationPrefs.fromMap(Map<String, dynamic> m) => NotificationPrefs(
+        soundOn: (m['sound_on'] as bool?) ?? true,
+        vibrateOn: (m['vibrate_on'] as bool?) ?? true,
+        customBody: m['custom_body'] as String?,
+        defaultRemindMinutes: (m['default_remind_minutes'] as num?)?.toInt() ?? 15,
+      );
+
+  Map<String, dynamic> toUpsert(String userId) => {
+        'user_id': userId,
+        'sound_on': soundOn,
+        'vibrate_on': vibrateOn,
+        'custom_body': customBody,
+        'default_remind_minutes': defaultRemindMinutes,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+}
