@@ -51,6 +51,13 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body || "",
     tag: data.tag || undefined,
+    // لو تنبيهين جم بنفس الـ tag (مش المفروض يحصل دلوقتي، كل معاد ليه tag
+    // فريد بالسيرفر)، renotify يضمن إن الجديد يظهر ويهتز/يصوّت برضو بدل ما
+    // يستبدل القديم بصمت من غير تنبيه.
+    // If two notifications ever share a tag (shouldn't happen now — each
+    // occurrence gets a unique tag server-side), renotify makes sure the new
+    // one still alerts/vibrates instead of silently replacing the old one.
+    renotify: true,
     icon: "icons/Icon-192.png",
     badge: "icons/Icon-192.png",
     silent: !!data.silent,

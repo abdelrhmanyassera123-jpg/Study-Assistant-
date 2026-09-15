@@ -174,7 +174,15 @@ async function handleCronTick(): Promise<Response> {
         await sendWebPush(sub, {
           title: entry.title,
           body,
-          tag: entry.id,
+          // مفتاح فريد لكل معاد، مش للمحاضرة نفسها بس — عشان لو نفس المحاضرة
+          // بعتلها أكتر من تنبيه في يوم واحد (تجربة، أو تعديل الميعاد)، كل
+          // واحد يظهر لوحده بدل ما يستبدل اللي قبله بصمت من غير تنبيه صوت
+          // جديد.
+          // A key unique per occurrence, not just per lecture — so if the
+          // same lecture gets more than one push in a day (testing, or a
+          // time edit), each shows on its own instead of silently replacing
+          // the last one with no fresh alert.
+          tag: `${entry.id}:${occurrenceAt}`,
           silent: !prefs.sound_on,
           vibrate: prefs.vibrate_on ? [200, 100, 200] : [],
         });
@@ -236,7 +244,7 @@ async function handleTestPush(auth: string): Promise<Response> {
       await sendWebPush(sub, {
         title: "محاضرة تجريبية",
         body,
-        tag: "test",
+        tag: `test:${Date.now()}`,
         silent: !prefs.sound_on,
         vibrate: prefs.vibrate_on ? [200, 100, 200] : [],
       });
