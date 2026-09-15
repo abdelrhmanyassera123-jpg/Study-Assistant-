@@ -151,7 +151,7 @@ async function handleCronTick(): Promise<Response> {
   const prefsCache = new Map<string, NotificationPrefsRow>();
 
   for (const { entry, occurrenceAt } of due) {
-    const claimed = await claimReminder(entry.id, occurrenceAt);
+    const claimed = await claimReminder(entry.id, occurrenceAt, entry.remind_minutes);
     if (!claimed) continue; // already sent by an earlier tick
 
     const subs = await fetchSubscriptionsAsService(entry.user_id);
@@ -414,19 +414,30 @@ async function deleteSubscriptionAsService(id: string): Promise<void> {
 }
 
 /// بيحاول "يحجز" إرسال التنبيه ده — لو صف اتحط بالفعل (نداء تاني لقاه)، السطر
-/// ده بيرجّع false ومفيش إرسال تاني.
+/// ده بيرجّع false ومفيش إرسال تاني. مدة التنبيه جزء من مفتاح الحجز نفسه،
+/// عشان لو المستخدم غيّرها بعد ما تنبيه النهاردة بعت خلاص، القيمة الجديدة
+/// تقدر تبعت لوحدها من غير ما تتحجب.
 /// Tries to "claim" sending this reminder — if the row is already there (an
 /// earlier tick claimed it), this returns false and nothing is sent again.
-async function claimReminder(entryId: string, occurrenceAt: string): Promise<boolean> {
+/// The lead time is part of the claim key itself, so if the user changes it
+/// after today's reminder already went out, the new value can still fire on
+/// its own instead of being blocked.
+async function claimReminder(
+  entryId: string,
+  occurrenceAt: string,
+  remindMinutes: number,
+): Promise<boolean> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/push_reminders_sent?on_conflict=entry_id,occurrence_at`,
+    `${SUPABASE_URL}/rest/v1/push_reminders_sent?on_conflict=entry_id,occurrence_at,remind_minutes`,
     {
       method: "POST",
       headers: {
         ...restHeaders(),
         Prefer: "resolution=ignore-duplicates,return=representation",
       },
-      body: JSON.stringify([{ entry_id: entryId, occurrence_at: occurrenceAt }]),
+      body: JSON.stringify([
+        { entry_id: entryId, occurrence_at: occurrenceAt, remind_minutes: remindMinutes },
+      ]),
     },
   );
   if (!res.ok) {
