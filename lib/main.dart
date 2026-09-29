@@ -6,12 +6,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/app_theme.dart';
 import 'core/l10n.dart';
 import 'core/settings.dart';
+import 'core/share_target.dart';
 import 'core/supabase_config.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/auth/setup_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // بدري عشان يلحق يمسك أي ملف مشارك قبل ما الشاشة الأولى ترسم — فحص كاش
+  // محلي بس، مش شبكة، فمش بيأخّر البدء الطبيعي في أي حالة تانية.
+  // Early, so it catches any shared file before the first screen paints — a
+  // local cache check, not the network, so it costs nothing in the normal
+  // case.
+  await SharedFile.init();
 
   // لو البيانات مش متحطة، بنفتح التطبيق على شاشة الإعداد بدل ما نكراش.
   // Without credentials we show a setup screen instead of crashing.

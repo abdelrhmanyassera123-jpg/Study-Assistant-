@@ -26,12 +26,52 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// مرّر أي طلب زي ما هو — مفيش كاش هنا، الهدف بس التسجيل نفسه.
-// Pass every request straight through — no caching here, the point is
-// simply staying registered.
+// مرّر أي طلب زي ما هو — إلا مشاركة ملف من تطبيق تاني (Android share sheet)،
+// دي بتوصل هنا كـ POST على "/share-target" ومفيش صفحة حقيقية ترد عليها.
+// Pass every request straight through — except a file shared from another
+// app (the Android share sheet), which arrives here as a POST to
+// "/share-target" with no real page to answer it.
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method === "POST" && url.pathname.endsWith("/share-target")) {
+    event.respondWith(handleShareTarget(event.request));
+    return;
+  }
   event.respondWith(fetch(event.request));
 });
+
+// بيدّي الملف المشارك مكان مؤقت (Cache Storage، دقيقة أو اتنين بالكتير) وبعدين
+// بيحوّل لصفحة التطبيق العادية بـ ?shared=1 — الصفحة نفسها هي اللي بتقراه من
+// هناك وتمسحه. لازم يرجّع تحويل (redirect) مش رد مباشر: المتصفح بيتنقّل
+// لعنوان الـ POST ده، ومفيش HTML حقيقي نرسمه هنا.
+// Gives the shared file a brief home (Cache Storage, a minute or two at
+// most) then redirects to the app's normal page with ?shared=1 — the page
+// itself reads it from there and deletes it. Must return a redirect, not a
+// direct response: the browser navigates to this POST's URL, and there is
+// no real HTML to render here.
+async function handleShareTarget(request) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    if (file) {
+      const cache = await caches.open("share-target-cache");
+      await cache.put(
+        "/shared-file",
+        new Response(file, {
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            "X-File-Name": encodeURIComponent(file.name || "shared-file"),
+          },
+        }),
+      );
+    }
+  } catch (e) {
+    // فشل قراءة الملف مش سبب يوقّف التحويل — الصفحة هتلاقي مفيش ملف وتتجاهله.
+    // A failed read is no reason to block the redirect — the page will find
+    // no file and move on.
+  }
+  return Response.redirect("./?shared=1", 303);
+}
 
 // تنبيه المحاضرة الجاي من السيرفر (send-reminders) — بيوصل حتى لو التطبيق
 // مقفول خالص، عكس التنبيه المحلي في lib/core/notifications.dart اللي محتاج

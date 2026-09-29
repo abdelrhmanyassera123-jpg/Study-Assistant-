@@ -9,6 +9,7 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/math_text.dart';
 import '../../core/settings.dart';
+import '../../core/share_target.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
@@ -73,6 +74,22 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   bool _running = false;
   SummarizerException? _error;
   StreamSubscription<String>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    // ملف جاي من مشاركة نظام (Android share sheet) — لو موجود، بيتضاف بعد
+    // أول فريم بنفس منطق اختيار الملف اليدوي.
+    // A file that arrived via the OS share sheet — if there is one, it is
+    // added after the first frame using the same logic as picking a file by
+    // hand.
+    final shared = SharedFile.take();
+    if (shared != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _addPickedFile(shared);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -171,27 +188,35 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       if (files.isEmpty || !mounted) return;
 
       for (final file in files) {
-        if (isAudioFile(file.name)) {
-          _addAudioFile(file);
-        } else if (isModelReadable(file.name)) {
-          // الـ PDF بيتبعت للموديل زي ما هو — مش بنحاول نفك نصه في المتصفح.
-          // PDFs go to the model untouched; we don't try to unpack them here.
-          setState(() {
-            _docs.add(LectureFile(
-              name: file.name,
-              mimeType: file.mimeType,
-              bytes: file.bytes,
-            ));
-            _error = null;
-          });
-        } else {
-          _addExtracted(file);
-        }
+        _addPickedFile(file);
       }
     } on UnsupportedDocumentException {
       if (mounted) showSnack(context, context.l.unsupportedFileType);
     } catch (e) {
       if (mounted) showSnack(context, '$e');
+    }
+  }
+
+  /// بيوجّه ملف (من الاختيار اليدوي أو من مشاركة النظام) لمساره الصح حسب
+  /// نوعه — صوت، PDF، أو نص يتستخرج.
+  /// Routes a file (whether hand-picked or arriving via the OS share sheet)
+  /// to the right path by type — audio, PDF, or extractable text.
+  void _addPickedFile(PickedFile file) {
+    if (isAudioFile(file.name)) {
+      _addAudioFile(file);
+    } else if (isModelReadable(file.name)) {
+      // الـ PDF بيتبعت للموديل زي ما هو — مش بنحاول نفك نصه في المتصفح.
+      // PDFs go to the model untouched; we don't try to unpack them here.
+      setState(() {
+        _docs.add(LectureFile(
+          name: file.name,
+          mimeType: file.mimeType,
+          bytes: file.bytes,
+        ));
+        _error = null;
+      });
+    } else {
+      _addExtracted(file);
     }
   }
 
