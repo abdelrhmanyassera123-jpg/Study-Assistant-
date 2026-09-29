@@ -90,6 +90,7 @@ class ParsedLecture {
     this.location = '',
     this.lecturer = '',
     this.group = '',
+    this.type = '',
   });
 
   final String title;
@@ -102,6 +103,10 @@ class ParsedLecture {
   /// القسم أو المجموعة اللي المحاضرة دي ليها — فاضية معناها للكل.
   /// The section or group this lecture belongs to; empty means everyone's.
   final String group;
+
+  /// "lecture" أو "section" أو "lab" — فاضية لو الجدول ما بيّنش النوع.
+  /// "lecture", "section", or "lab" — empty when the table doesn't show a type.
+  final String type;
 
   /// بيقرا صف واحد من رد الموديل، ويرجّع null لو الصف ناقص أو غلط.
   /// Reads one row of the model's reply, returning null when the row is
@@ -125,7 +130,18 @@ class ParsedLecture {
       location: '${m['location'] ?? ''}'.trim(),
       lecturer: '${m['lecturer'] ?? ''}'.trim(),
       group: '${m['group'] ?? ''}'.trim(),
+      type: _normalizeType('${m['type'] ?? ''}'),
     );
+  }
+
+  /// بيقبل بس القيم التلاتة المعروفة، وأي حاجة تانية بيرجّعها فاضية بدل ما
+  /// يمررها زي ما هي — الموديل أحيانًا بيرجّع كلمة تانية غير المتفق عليها.
+  /// Accepts only the three known values; anything else comes back empty
+  /// instead of being passed through as-is — the model sometimes returns a
+  /// word other than the agreed ones.
+  static String _normalizeType(String raw) {
+    final v = raw.trim().toLowerCase();
+    return (v == 'lecture' || v == 'section' || v == 'lab') ? v : '';
   }
 
   /// بيحوّل اسم اليوم لرقمه (1 = الاتنين ... 7 = الأحد).
@@ -596,9 +612,10 @@ $columnsLine
 $groupsLine
 
 هترجّع JSON بالشكل ده بالظبط:
-{"entries":[{"title":"","day":"","start":"","end":"","location":"","lecturer":"","group":""}]}
+{"entries":[{"title":"","day":"","start":"","end":"","location":"","lecturer":"","group":"","type":""}]}
 
 - "title": اسم المادة أو المحاضرة زي ما هو مكتوب.
+- "type": نوع الجلسة، لو الجدول بيوضحه — قيمة واحدة بس من التلاتة دي: "lecture" أو "section" أو "lab". طابق الكلمة الأصلية زي كده: "Lecture"/"Seminar" → "lecture"، "Section"/"Tutorial"/"CAS" → "section"، "Lab"/"Practical"/"Skills Lab" → "lab". لو الجدول ما بيّنش النوع خالص (مفيش كلمة تدل عليه في اسم المحاضرة أو عمود منفصل)، سيبها فاضية — متخترعش نوع من عندك.
 - "day": اسم اليوم بالعربي كامل (السبت، الأحد، الاثنين، الثلاثاء، الأربعاء، الخميس، الجمعة).
 - "start" و "end": الوقت بنظام 24 ساعة "HH:MM". لو الوقت مكتوب 10-12 يبقى start "10:00" و end "12:00". لو مفيش وقت نهاية سيب "end" فاضية.
   $timeGuidance

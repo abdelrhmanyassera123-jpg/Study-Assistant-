@@ -26,7 +26,8 @@ const CORS_HEADERS: Record<string, string> = {
   // is even sent when one of them is not allowed.
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, " +
-    "x-file-mime, x-file-size, x-file-name",
+    "x-file-mime, x-file-size, x-file-name, " +
+    "x-upload-url, x-upload-offset, x-upload-final, x-chunk-size",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -107,31 +108,41 @@ async function personalApiKey(req: Request): Promise<string | null> {
 /// المعيار عام مش مربوط بأرقام إصدارات معينة، عشان القايمة تفضل معقولة لما
 /// جوجل تطرح موديلات جديدة من غير ما نعدّل الكود.
 ///
-/// [preferPro] بتقلب الأولوية: جدول كثيف كلاسيكيًا محتاج قراية دقيقة لشبكة
-/// أعمدة صغيرة أهم من سرعة الرد — flash بيجري أسرع بس بيغلط في عدّ الأعمدة،
-/// وpro أبطأ لكن أدق في القراية البصرية المزدحمة دي.
+/// الافتراضي (`preferPro` false) بيفضّل flash-lite الأول: عادة حصته
+/// اليومية المجانية أكبر من flash العادي وأكبر بكتير من pro، فالمفتاح
+/// المشترك بيعيش أطول قبل ما "يخلص حصتك المجانية". [preferPro] بتقلب
+/// الأولوية للدقة بدل التوفير: جدول كثيف كلاسيكيًا محتاج قراية دقيقة لشبكة
+/// أعمدة صغيرة أهم من توفير الحصة — lite وflash بيجروا أسرع بس بيغلطوا في
+/// عدّ الأعمدة، وpro أبطأ وأغلى في الحصة لكن أدق في القراية البصرية
+/// المزدحمة دي.
 /// The rules are generic rather than pinned to version numbers, so the list
 /// stays sensible as Google ships new models without us touching this code.
 ///
-/// [preferPro] flips the priority: a dense timetable needs precise reading of
-/// a small column grid more than a fast reply — flash answers quicker but
-/// miscounts columns, while pro is slower but more reliable at this kind of
-/// crowded visual reading.
+/// The default (`preferPro` false) prefers flash-lite first: it typically
+/// carries a bigger daily free-tier quota than plain flash, and a much
+/// bigger one than pro, so a shared key lasts longer before "your free quota
+/// ran out". [preferPro] flips the priority toward accuracy over quota: a
+/// dense timetable needs precise reading of a small column grid more than
+/// stretching the quota — lite and flash run faster but miscount columns,
+/// while pro is slower and costs more quota but is more reliable at this
+/// kind of crowded visual reading.
 function rank(name: string, preferPro = false): number {
   if (!name.startsWith("gemini-")) return 60; // gemma وغيرها
   let score = 0;
   if (name.includes("preview")) score += 20; // مش مستقر
   if (name.includes("exp")) score += 20;
   if (name.includes("image")) score += 15; // متخصص في الصور مش النص
-  if (name.includes("lite")) score += 5; // أضعف في المهام الطويلة
+
   if (preferPro) {
+    if (name.includes("lite")) score += 5; // أضعف في المهام الطويلة
     if (name.includes("pro")) score += 0;
     else if (name.includes("flash")) score += 2;
     else score += 10;
   } else {
-    if (name.includes("flash")) score += 0; // الأنسب للتلخيص: سريع ورخيص
-    else if (name.includes("pro")) score += 2;
-    else score += 10;
+    if (name.includes("lite")) score += 0; // أوفر حصة يومية
+    else if (name.includes("flash")) score += 2;
+    else if (name.includes("pro")) score += 10;
+    else score += 12;
   }
   // "-latest" بيشاور على أحدث موديل، وأحدث موديل حصته المجانية أضيق —
   // المستخدم على المفتاح المجاني بيستفيد أكتر من نسخة مستقرة برقم ثابت.
@@ -488,6 +499,108 @@ async function uploadFile(apiKey: string, req: Request): Promise<Response> {
     name: file.name,
     mime_type: file.mimeType ?? mime,
     state: ready,
+  });
+}
+
+/// بيبدأ جلسة رفع resumable عند جوجل وبيرجّع رابطها بس — من غير ما يلمس
+/// بايت واحد من الملف. مخصص للملفات الكبيرة اللي وقت رفعها ممكن يعدّي
+/// سقف وقت الفنكشن (150 ثانية على الخطة المجانية) لو اتبعتت دفعة واحدة.
+/// Starts a resumable upload session at Google and returns just its URL —
+/// without touching a single byte of the file. Meant for large files whose
+/// upload time could cross the function's wall-clock ceiling (150s on the
+/// free plan) if sent in one shot.
+async function startUpload(apiKey: string, req: Request): Promise<Response> {
+  const mime = req.headers.get("x-file-mime") ?? "application/octet-stream";
+  const size = req.headers.get("x-file-size") ?? "";
+  const name = req.headers.get("x-file-name") ?? "lecture";
+  if (!/^\d+$/.test(size)) return json({ error: "x-file-size is required" }, 400);
+
+  const start = await fetch(`${GEMINI_UPLOAD}/files?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": size,
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ file: { display_name: name } }),
+  });
+
+  const uploadUrl = start.headers.get("x-goog-upload-url");
+  if (!start.ok || !uploadUrl) {
+    return json({
+      error: `Gemini returned ${start.status}`,
+      detail: await start.text(),
+    }, start.status === 200 ? 502 : start.status);
+  }
+  await start.text();
+  return json({ upload_url: uploadUrl });
+}
+
+/// بيمرّر جزء واحد من الملف لجلسة رفع مبدوءة بالفعل (من [startUpload]).
+/// مفتاح Gemini مش محتاج هنا أصلاً — رابط الجلسة نفسه هو التصريح، بالظبط
+/// زي ما [uploadFile] كانت بتعمل في خطوتها التانية من غير المفتاح.
+///
+/// التقسيم لأجزاء مش عشان حجم الملف — ده اتحل بالتمرير المباشر أصلاً — لكن
+/// عشان **وقت** رفع كل جزء يفضل جوه سقف الـ 150 ثانية بتاع الفنكشن مهما
+/// كانت سرعة نت المستخدم، لأن كل نداء هنا فنكشن جديدة بسقف وقتها الخاص.
+/// Streams one part of the file into a session already started by
+/// [startUpload]. The Gemini key is not needed at all here — the session URL
+/// itself is the authorization, exactly like [uploadFile]'s second step
+/// never needed it either.
+///
+/// The split is not about file size — direct streaming already solved that —
+/// but about keeping each chunk's **upload time** inside the function's 150s
+/// ceiling no matter how slow the user's connection is, since each call here
+/// is a fresh invocation with its own time budget.
+async function uploadChunk(req: Request): Promise<Response> {
+  const rawUrl = req.headers.get("x-upload-url");
+  const offset = req.headers.get("x-upload-offset") ?? "";
+  const chunkSize = req.headers.get("x-chunk-size") ?? "";
+  const isFinal = req.headers.get("x-upload-final") === "1";
+
+  if (!rawUrl) return json({ error: "x-upload-url is required" }, 400);
+  if (!/^\d+$/.test(offset)) return json({ error: "x-upload-offset is required" }, 400);
+  if (!/^\d+$/.test(chunkSize)) return json({ error: "x-chunk-size is required" }, 400);
+  if (!req.body) return json({ error: "no chunk body" }, 400);
+
+  const uploadUrl = decodeURIComponent(rawUrl);
+  // الرابط ده جاي من جوجل نفسها في startUpload — مش مدخل مستخدم حر، لكن
+  // بنتأكد برضو إنه فعلاً رابط جوجل قبل ما نبعتله بايتات.
+  // This URL came from Google itself in startUpload — not free user input —
+  // but we still check it is actually a Google URL before streaming bytes to it.
+  if (!uploadUrl.startsWith("https://generativelanguage.googleapis.com/")) {
+    return json({ error: "invalid upload URL" }, 400);
+  }
+
+  const put = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": chunkSize,
+      "X-Goog-Upload-Offset": offset,
+      "X-Goog-Upload-Command": isFinal ? "upload, finalize" : "upload",
+    },
+    body: req.body,
+    duplex: "half",
+  } as RequestInit);
+
+  const text = await put.text();
+  if (!put.ok) {
+    return json({ error: `Gemini returned ${put.status}`, detail: text }, put.status);
+  }
+  if (!isFinal) return json({ ok: true });
+
+  const info = text ? JSON.parse(text) : {};
+  const file = info?.file ?? {};
+  if (!file.uri || !file.name) {
+    return json({ error: "الرفع رجع من غير رابط ملف." }, 502);
+  }
+  return json({
+    uri: file.uri,
+    name: file.name,
+    mime_type: file.mimeType ?? "",
+    state: file.state ?? "UNKNOWN",
   });
 }
 
@@ -855,6 +968,23 @@ Deno.serve(async (req: Request) => {
     if (!apiKeyEarly) return json({ error: "GEMINI_API_KEY مش متظبط." }, 500);
     try {
       return await uploadFile(apiKeyEarly, req);
+    } catch (e) {
+      return json({ error: `${e}` }, 500);
+    }
+  }
+  if (action === "upload_start") {
+    if (!apiKeyEarly) return json({ error: "GEMINI_API_KEY مش متظبط." }, 500);
+    try {
+      return await startUpload(apiKeyEarly, req);
+    } catch (e) {
+      return json({ error: `${e}` }, 500);
+    }
+  }
+  if (action === "upload_chunk") {
+    // مفتاح Gemini مش لازم هنا — شوف تعليق uploadChunk.
+    // No Gemini key needed here — see uploadChunk's comment.
+    try {
+      return await uploadChunk(req);
     } catch (e) {
       return json({ error: `${e}` }, 500);
     }

@@ -161,6 +161,13 @@ class GeminiSummarizer implements Summarizer {
     return buffer.toString().trim();
   }
 
+  /// أي ملف أكبر من كده بيتبعت على أجزاء بدل دفعة واحدة — شوف
+  /// [_uploadChunked] وليه.
+  /// Anything larger than this is sent in chunks instead of one shot — see
+  /// [_uploadChunked] for why.
+  static const _directUploadCeiling = 20 * 1024 * 1024;
+  static const _chunkBytes = 10 * 1024 * 1024;
+
   @override
   Future<UploadedFile> upload(
     LectureFile file, {
@@ -169,6 +176,15 @@ class GeminiSummarizer implements Summarizer {
     _requireSignIn();
     _requireFitting([file]);
 
+    return file.bytes.length <= _directUploadCeiling
+        ? _uploadDirect(file, onProgress: onProgress)
+        : _uploadChunked(file, onProgress: onProgress);
+  }
+
+  Future<UploadedFile> _uploadDirect(
+    LectureFile file, {
+    void Function(double fraction)? onProgress,
+  }) async {
     final url = Uri.parse('${config.functionUrl}?action=upload');
     final headers = {
       'Authorization': 'Bearer ${config.accessToken}',
@@ -237,6 +253,145 @@ class GeminiSummarizer implements Summarizer {
       );
     }
     return uploaded;
+  }
+
+  /// رفع محاضرة كبيرة على أجزاء بدل دفعة واحدة.
+  /// Uploads a large lecture in chunks instead of one shot.
+  ///
+  /// نداء واحد بالملف كله بيقعد فاضل جوه الفنكشن لحد ما يخلص، وده ممكن
+  /// يعدّي سقف الـ 150 ثانية بتاع Supabase على نت بطيء حتى لو الملف مش ضخم
+  /// أوي. كل جزء هنا نداء فنكشن جديد بسقف وقته الخاص، فمهما كان الملف كبير
+  /// ومهما كان النت بطيء، أي جزء لوحده هيفضل جوه الحد.
+  /// A single call with the whole file sits inside the function until it
+  /// finishes, which can cross Supabase's 150s ceiling on a slow connection
+  /// even for a file that isn't huge. Each chunk here is a fresh function
+  /// call with its own time budget, so no matter how large the file or how
+  /// slow the connection, any one chunk stays inside the limit.
+  Future<UploadedFile> _uploadChunked(
+    LectureFile file, {
+    void Function(double fraction)? onProgress,
+  }) async {
+    final startResponse = await _client.post(
+      Uri.parse('${config.functionUrl}?action=upload_start'),
+      headers: {
+        ..._headers,
+        'x-file-mime': file.mimeType,
+        'x-file-size': '${file.bytes.length}',
+        'x-file-name': Uri.encodeComponent(file.name),
+      },
+    );
+    if (startResponse.statusCode != 200) {
+      throw SummarizerException(
+        _statusMessage(startResponse.statusCode),
+        hint: _statusHint(startResponse.statusCode) ?? startResponse.body,
+      );
+    }
+    final uploadUrl = (jsonDecode(startResponse.body) as Map<String, dynamic>)['upload_url']
+        as String?;
+    if (uploadUrl == null || uploadUrl.isEmpty) {
+      throw const SummarizerException('تعذّر بدء الرفع.');
+    }
+
+    final total = file.bytes.length;
+    final chunkUrl = Uri.parse('${config.functionUrl}?action=upload_chunk');
+    Map<String, dynamic>? finalInfo;
+    var offset = 0;
+
+    while (offset < total) {
+      final end = (offset + _chunkBytes < total) ? offset + _chunkBytes : total;
+      final chunk = Uint8List.sublistView(file.bytes, offset, end);
+      final isFinal = end >= total;
+      final sentBefore = offset;
+
+      final headers = {
+        ..._headers,
+        'Content-Type': 'application/octet-stream',
+        'x-upload-url': Uri.encodeComponent(uploadUrl),
+        'x-upload-offset': '$offset',
+        'x-chunk-size': '${chunk.length}',
+        'x-upload-final': isFinal ? '1' : '0',
+      };
+
+      final int status;
+      final String text;
+      try {
+        final send = uploader;
+        if (send != null) {
+          final result = await send(
+            url: chunkUrl,
+            headers: headers,
+            bytes: chunk,
+            onProgress: (sent, chunkTotal) => onProgress?.call(
+              chunkTotal == 0 ? sentBefore / total : (sentBefore + sent) / total,
+            ),
+          );
+          status = result.status;
+          text = result.body;
+        } else {
+          final response = await _client.post(chunkUrl, headers: headers, body: chunk);
+          status = response.statusCode;
+          text = utf8.decode(response.bodyBytes);
+        }
+      } catch (e) {
+        throw SummarizerException(
+          'الرفع فشل قبل ما يوصل.',
+          hint: 'اتأكد إن النت شغال وجرب تاني. ($e)',
+        );
+      }
+
+      if (status != 200) {
+        if (status == 429) _learnLimit(text);
+        throw SummarizerException(
+          _statusMessage(status),
+          hint: _statusHint(status) ?? (text.isEmpty ? null : text),
+        );
+      }
+
+      if (isFinal) finalInfo = jsonDecode(text) as Map<String, dynamic>;
+      offset = end;
+    }
+    onProgress?.call(1);
+
+    final uri = finalInfo?['uri'] as String?;
+    if (uri == null || uri.isEmpty) {
+      throw const SummarizerException('الرفع رجع من غير رابط للملف.');
+    }
+
+    final name = (finalInfo?['name'] as String?) ?? '';
+    var state = (finalInfo?['state'] as String?) ?? 'UNKNOWN';
+    if (state == 'PROCESSING' && name.isNotEmpty) {
+      state = await _pollFileState(name);
+    }
+    if (state == 'FAILED') {
+      throw SummarizerException(
+        'الملف اترفع بس الخدمة مش قادرة تقراه.',
+        hint: 'اتأكد إنه ملف صوت سليم، أو صدّره mp3 وجرب تاني.',
+      );
+    }
+
+    return UploadedFile(
+      uri: uri,
+      mimeType: (finalInfo?['mime_type'] as String?) ?? file.mimeType,
+      name: name,
+      state: state,
+    );
+  }
+
+  /// بيسأل عن حالة ملف لحد ما يخلص معالجة أو يطول الانتظار.
+  /// Asks for a file's state until processing finishes or waiting runs long.
+  Future<String> _pollFileState(String name) async {
+    var state = 'PROCESSING';
+    for (var i = 0; i < 12 && state == 'PROCESSING'; i++) {
+      await Future.delayed(const Duration(milliseconds: 2500));
+      final response = await _client.post(
+        Uri.parse(config.functionUrl),
+        headers: _headers,
+        body: jsonEncode({'action': 'file_state', 'file_name': name}),
+      );
+      if (response.statusCode != 200) break;
+      state = (jsonDecode(response.body) as Map<String, dynamic>)['state'] as String? ?? state;
+    }
+    return state;
   }
 
   void _requireSignIn() {

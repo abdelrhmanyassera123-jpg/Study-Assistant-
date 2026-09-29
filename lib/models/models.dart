@@ -406,6 +406,7 @@ class ScheduleEntry {
     this.lecturer = '',
     this.notes = '',
     this.remindMinutes,
+    this.sessionType = '',
     required this.createdAt,
   });
 
@@ -422,6 +423,10 @@ class ScheduleEntry {
   final String location;
   final String lecturer;
   final String notes;
+
+  /// "lecture" أو "section" أو "lab" — فاضية لو مش معروف.
+  /// "lecture", "section", or "lab" — empty when unknown.
+  final String sessionType;
 
   /// التنبيه قبل المحاضرة بكام دقيقة — null معناها متوقف.
   /// How many minutes before the lecture to remind; null means switched off.
@@ -462,6 +467,7 @@ class ScheduleEntry {
     String? lecturer,
     String? notes,
     int? remindMinutes,
+    String? sessionType,
     bool clearReminder = false,
     bool clearSubject = false,
     bool clearEnd = false,
@@ -478,6 +484,7 @@ class ScheduleEntry {
         notes: notes ?? this.notes,
         remindMinutes:
             clearReminder ? null : (remindMinutes ?? this.remindMinutes),
+        sessionType: sessionType ?? this.sessionType,
         createdAt: createdAt,
       );
 
@@ -492,6 +499,7 @@ class ScheduleEntry {
         lecturer: (m['lecturer'] as String?) ?? '',
         notes: (m['notes'] as String?) ?? '',
         remindMinutes: (m['remind_minutes'] as num?)?.toInt(),
+        sessionType: (m['session_type'] as String?) ?? '',
         createdAt: _parseDate(m['created_at']) ?? DateTime.now(),
       );
 
@@ -510,6 +518,7 @@ class ScheduleEntry {
         'lecturer': lecturer,
         'notes': notes,
         'remind_minutes': remindMinutes,
+        'session_type': sessionType,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }
@@ -526,7 +535,7 @@ class NotificationPrefs {
     this.soundOn = true,
     this.vibrateOn = true,
     this.customBody,
-    this.defaultRemindMinutes = 15,
+    this.defaultRemindMinutes = 10,
   });
 
   final bool soundOn;
@@ -556,7 +565,7 @@ class NotificationPrefs {
         soundOn: (m['sound_on'] as bool?) ?? true,
         vibrateOn: (m['vibrate_on'] as bool?) ?? true,
         customBody: m['custom_body'] as String?,
-        defaultRemindMinutes: (m['default_remind_minutes'] as num?)?.toInt() ?? 15,
+        defaultRemindMinutes: (m['default_remind_minutes'] as num?)?.toInt() ?? 10,
       );
 
   Map<String, dynamic> toUpsert(String userId) => {

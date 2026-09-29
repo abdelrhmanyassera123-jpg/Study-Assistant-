@@ -67,7 +67,7 @@ const DEFAULT_PREFS: NotificationPrefsRow = {
   sound_on: true,
   vibrate_on: true,
   custom_body: null,
-  default_remind_minutes: 15,
+  default_remind_minutes: 10,
 };
 
 // الكرون بس هو اللي بينادي بدون CORS (سيرفر لسيرفر)، لكن زرار "جرّب

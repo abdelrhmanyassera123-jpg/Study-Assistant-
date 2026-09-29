@@ -549,6 +549,22 @@ class AppL10n {
     return isAr ? ar[index] : en[index];
   }
 
+  /// نوع الجلسة، لو الجدول وضّحه — فاضي لأي قيمة تانية أو غير معروفة.
+  /// The session type, when the table showed one — empty for anything else
+  /// or unknown.
+  String sessionTypeLabel(String type) {
+    switch (type) {
+      case 'lecture':
+        return _('محاضرة', 'Lecture');
+      case 'section':
+        return _('سكشن', 'Section');
+      case 'lab':
+        return _('لاب', 'Lab');
+      default:
+        return '';
+    }
+  }
+
   // ----------------------------------------------------------------- stats
   String get last7Days => _('آخر 7 أيام', 'Last 7 days');
   String get totalFocusTime => _('إجمالي وقت التركيز', 'Total focus time');

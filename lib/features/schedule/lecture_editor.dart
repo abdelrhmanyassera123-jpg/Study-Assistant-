@@ -46,7 +46,13 @@ class _LectureEditorState extends ConsumerState<_LectureEditor> {
       ? null
       : _timeOf(widget.existing!.endMinutes!);
   late String? _subjectId = widget.existing?.subjectId;
-  late int? _remind = widget.existing?.remindMinutes ?? 15;
+  // للمحاضرة الجديدة: بتاخد مدة التنبيه الافتراضية اللي المستخدم ظبطها في
+  // الإعدادات، أو 10 دقايق لو لسه ما ظبطش حاجة.
+  // For a new lecture: takes the default lead time the user set in
+  // Settings, or 10 minutes if they haven't set one yet.
+  late int? _remind = widget.existing?.remindMinutes ??
+      ref.read(notificationPrefsProvider).value?.defaultRemindMinutes ??
+      10;
   bool _busy = false;
 
   static TimeOfDay _timeOf(int minutes) =>

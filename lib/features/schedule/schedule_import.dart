@@ -150,6 +150,13 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
 
     setState(() => _saving = true);
     final repo = ref.read(repositoryProvider);
+    // التنبيه بيتفتح افتراضيًا: الجدول المستورد كله محاضرات جاية، واللي مش
+    // عايز تنبيه بيقفله من الصف نفسه. المدة نفسها من إعدادات المستخدم.
+    // Reminders default to on: an imported timetable is all upcoming
+    // lectures, and anyone who does not want one turns it off from the row
+    // itself. The lead time itself comes from the user's own setting.
+    final defaultRemind =
+        ref.read(notificationPrefsProvider).value?.defaultRemindMinutes ?? 10;
     try {
       if (replace) await repo.clearSchedule();
       await repo.addScheduleEntries([
@@ -162,12 +169,8 @@ class _ScheduleImportPageState extends ConsumerState<ScheduleImportPage> {
             endMinutes: lecture.endMinutes,
             location: lecture.location,
             lecturer: lecture.lecturer,
-            // التنبيه بيتفتح افتراضيًا على ربع ساعة: الجدول المستورد كله
-            // محاضرات جاية، واللي مش عايز تنبيه بيقفله من الصف نفسه.
-            // Reminders default to a quarter of an hour: an imported timetable
-            // is all upcoming lectures, and anyone who does not want one turns
-            // it off from the row itself.
-            remindMinutes: 15,
+            remindMinutes: defaultRemind,
+            sessionType: lecture.type,
             createdAt: DateTime.now(),
           ),
       ]);
@@ -466,7 +469,9 @@ class _ReadRow extends StatelessWidget {
     String clock(int minutes) =>
         TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60).format(context);
 
+    final typeLabel = l.sessionTypeLabel(lecture.type);
     final when = [
+      if (typeLabel.isNotEmpty) typeLabel,
       l.weekdayName(lecture.weekday),
       lecture.endMinutes == null
           ? clock(lecture.startMinutes)

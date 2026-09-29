@@ -438,7 +438,9 @@ class _LectureRow extends ConsumerWidget {
     final subject = ref.watch(subjectMapProvider)[entry.subjectId];
     final colour = subject?.color ?? scheme.primary;
 
+    final typeLabel = l.sessionTypeLabel(entry.sessionType);
     final meta = [
+      if (typeLabel.isNotEmpty) typeLabel,
       if (entry.location.trim().isNotEmpty) entry.location.trim(),
       if (entry.lecturer.trim().isNotEmpty) entry.lecturer.trim(),
     ].join(' · ');

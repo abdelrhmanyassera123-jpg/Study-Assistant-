@@ -336,7 +336,7 @@ class _NotificationCustomizeCardState
               DropdownButtonFormField<int?>(
                 initialValue: reminderChoices.contains(prefs.defaultRemindMinutes)
                     ? prefs.defaultRemindMinutes
-                    : 15,
+                    : 10,
                 items: [
                   for (final choice in reminderChoices.whereType<int>())
                     DropdownMenuItem(
