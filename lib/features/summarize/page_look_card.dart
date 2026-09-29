@@ -13,6 +13,12 @@ import 'summarizer_provider.dart';
 
 const _imageExtensions = ['png', 'jpg', 'jpeg', 'webp'];
 
+/// PDF كمان مقبول: تلخيص محفوظ من قبل (حتى لو مُصدّر من التطبيق نفسه) بدل
+/// صورة كراسة بس.
+/// PDF is accepted too: a summary already saved somewhere (even one exported
+/// from this app itself), not only a notebook photo.
+const _styleExtensions = [..._imageExtensions, 'pdf'];
+
 /// سقف عدد الصور في التحليل الواحد.
 /// How many images one analysis takes.
 ///
@@ -49,23 +55,26 @@ class _PageLookCardState extends ConsumerState<PageLookCard> {
     });
 
     try {
-      final picked = await pickLocalFiles(extensions: _imageExtensions);
+      final picked = await pickLocalFiles(extensions: _styleExtensions);
       if (picked.isEmpty) {
         if (mounted) setState(() => _busy = false);
         return;
       }
 
       // بنصغّرها في المتصفح الأول: صور الموبايل بتكسّر حدود ذاكرة الـ Edge
-      // Function لما تتبعت بحجمها الأصلي.
-      // Shrunk in the browser first: at their original size, phone photos blow
-      // the Edge Function's memory limit.
+      // Function لما تتبعت بحجمها الأصلي. الـ PDF مش صورة، فمينفعش يتصغّر
+      // زيها — بيتبعت زي ما هو.
+      // Shrunk in the browser first: at their original size, phone photos
+      // blow the Edge Function's memory limit. A PDF is not an image, so it
+      // cannot be shrunk the same way — it is sent as-is.
       final files = <LectureFile>[];
       for (final f in picked.take(_maxImages)) {
-        final small = await shrinkImage(f);
+        final isPdf = f.name.toLowerCase().endsWith('.pdf');
+        final ready = isPdf ? f : await shrinkImage(f);
         files.add(LectureFile(
-          name: small.name,
-          mimeType: small.mimeType,
-          bytes: small.bytes,
+          name: ready.name,
+          mimeType: ready.mimeType,
+          bytes: ready.bytes,
         ));
       }
 

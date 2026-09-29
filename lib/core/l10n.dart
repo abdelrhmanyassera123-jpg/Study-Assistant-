@@ -826,17 +826,18 @@ class AppL10n {
   // ------------------------------------------------------- page look
   String get pageLook => _('شكل صفحتك', 'Your page layout');
   String get pageLookIntro => _(
-        'ارفع صورة من كراستك، والتطبيق يقرا شكل صفحتك (ألوانك، مربعاتك، ترتيب '
-            'أقسامك) وينقل نص تلخيصك كمان — فما تحتاجش تكتبه بإيدك.',
-        'Upload a photo of your notebook: the app reads your page layout — '
-            'colours, boxes, section order — and transcribes the summary too, '
-            'so nothing needs retyping.',
+        'ارفع صورة من كراستك أو ملف PDF لتلخيص محفوظ، والتطبيق يقرا شكل صفحتك '
+            '(ألوانك، مربعاتك، ترتيب أقسامك) وينقل نص تلخيصك كمان — فما '
+            'تحتاجش تكتبه بإيدك.',
+        'Upload a photo of your notebook, or a PDF of a saved summary: the '
+            'app reads your page layout — colours, boxes, section order — '
+            'and transcribes the summary too, so nothing needs retyping.',
       );
   String get uploadHandwriting =>
-      _('ارفع صور تلخيصاتك', 'Upload page photos');
+      _('ارفع صور أو PDF تلخيصاتك', 'Upload page photos or PDFs');
   String get pickManyImages => _(
-        'تقدر تختار أكتر من صورة مرة واحدة — كل ما زودت صفحات، الأسلوب يبان أوضح.',
-        'Pick several images at once; more pages make the style clearer.',
+        'تقدر تختار أكتر من صورة أو ملف مرة واحدة — كل ما زودت صفحات، الأسلوب يبان أوضح.',
+        'Pick several images or files at once; more pages make the style clearer.',
       );
   String get analyzingLook => _('بيحلل شكل الصفحة...', 'Reading your layout...');
   String get lookSaved => _('شكل صفحتك اتسجل', 'Layout saved');
