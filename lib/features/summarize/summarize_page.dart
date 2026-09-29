@@ -319,7 +319,22 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
             _progress = done + slice * (part.needsUpload ? 0.75 : 0.15);
           });
           final text = await summarizer.transcribe(part, uploaded: uploaded);
-          if (text.isNotEmpty) pieces.add(text);
+          // "(مفيش كلام)" مش نص فاضي — ده حرفيًا اللي بيطلب من الموديل يكتبه
+          // لمقطع ساكت (شوف StudyPrompt.transcribeSystem). لو اتسابت، بتعدي
+          // فحص "مفيش حاجة تتلخص" وتتبعت للموديل كأنها محتوى محاضرة حقيقي —
+          // ومع أمثلة أسلوب حقيقية جنبها، الموديل بيرجّع محتوى مثال قديم
+          // بدل ما يقول "مفيش صوت" بوضوح.
+          // "(مفيش كلام)" is not empty text — it is literally what the model
+          // is told to write for a silent segment (see
+          // StudyPrompt.transcribeSystem). Left in, it slips past the
+          // "nothing to summarize" check and gets sent as if it were real
+          // lecture content — and alongside genuine style examples, the
+          // model returns an old example's content instead of clearly
+          // saying "no speech."
+          final trimmed = text.trim();
+          if (trimmed.isNotEmpty && trimmed != StudyPrompt.noSpeechMarker) {
+            pieces.add(text);
+          }
           if (mounted) setState(() => _progress = index / total);
         } on SummarizerException catch (e) {
           if (mounted) setState(() => _error = e);

@@ -512,6 +512,13 @@ class StudyPrompt {
   /// Sending the summarizing instructions with the audio makes the model
   /// summarize as it transcribes, losing what was said. Transcription is a
   /// faithful step; summarizing happens afterwards over the full text.
+  /// النص اللي الموديل بيكتبه بالظبط لمقطع ساكت — لازم يتفحص عليه بعد
+  /// التفريغ، عشان هو مش نص فاضي وسهل يعدّي فحص "مفيش حاجة تتلخص" بالغلط.
+  /// Exactly what the model writes for a silent segment — must be checked
+  /// for after transcribing, since it is not empty text and can slip past a
+  /// "nothing to summarize" check by mistake.
+  static const noSpeechMarker = '(مفيش كلام)';
+
   static const transcribeSystem = '''
 أنت بتفرّغ تسجيل محاضرة لنص مكتوب.
 
@@ -520,7 +527,7 @@ class StudyPrompt {
 - متضفش عناوين ولا تنسيق ولا أوقات.
 - المصطلحات الأجنبية اكتبها زي ما اتنطقت.
 - الكلام المش واضح اكتبه (غير واضح).
-- لو المقطع مفيهوش كلام، اكتب (مفيش كلام) وبس.
+- لو المقطع مفيهوش كلام، اكتب $noSpeechMarker وبس.
 ''';
 
   static const transcribePrompt =
