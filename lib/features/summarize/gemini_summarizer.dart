@@ -166,7 +166,15 @@ class GeminiSummarizer implements Summarizer {
   /// Anything larger than this is sent in chunks instead of one shot — see
   /// [_uploadChunked] for why.
   static const _directUploadCeiling = 20 * 1024 * 1024;
-  static const _chunkBytes = 10 * 1024 * 1024;
+
+  // جوجل بترفض أي جزء نص الطريق (مش الأخير) لو حجمه مش مضاعف بالظبط لـ 8
+  // ميجا: "not a multiple of the 8388608 byte chunk granularity" — رقم
+  // ثابت من عندها، مش حاجة إحنا بنقرره. الجزء الأخير بس مسموح يكون أي حجم.
+  // Google rejects any non-final chunk whose size is not an exact multiple
+  // of 8 MB: "not a multiple of the 8388608 byte chunk granularity" — a
+  // fixed number on their end, not something we choose. Only the last chunk
+  // is allowed to be any size.
+  static const _chunkBytes = 8 * 1024 * 1024;
 
   @override
   Future<UploadedFile> upload(
