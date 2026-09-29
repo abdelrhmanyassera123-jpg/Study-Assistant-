@@ -680,6 +680,15 @@ class AppL10n {
       ? 'بيفرّغ المقطع $part من $total...'
       : 'Transcribing part $part of $total...';
 
+  /// لملف كبير بيتبعت على أجزاء — نص بيتغيّر مع كل جزء يثبت إن الرفع
+  /// ماشي فعلاً، حتى لو النسبة المئوية بطيئة الحركة على ملف طويل.
+  /// For a large file sent in chunks — text that changes with every chunk to
+  /// prove the upload is actually moving, even when the percentage shifts
+  /// slowly on a long file.
+  String uploadingChunk(int chunk, int totalChunks) => isAr
+      ? 'بيرفع جزء $chunk من $totalChunks... (حسب سرعة النت)'
+      : 'Uploading chunk $chunk of $totalChunks... (depends on your connection)';
+
   String audioParts(int n) {
     if (!isAr) return n == 1 ? '1 part' : '$n parts';
     if (n == 1) return 'مقطع واحد';

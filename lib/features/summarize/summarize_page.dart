@@ -301,6 +301,15 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                 if (!mounted) return;
                 setState(() => _progress = done + slice * 0.75 * fraction);
               },
+              // ملف كبير بيتبعت على أجزاء: النص ده بيتغيّر مع كل جزء، فيثبت
+              // للمستخدم إن حاجة بتحصل فعلًا حتى لو الشريط نفسه بيتحرك ببطء.
+              // A large file goes out in chunks: this text changes with each
+              // one, proving to the user that something is really happening
+              // even when the bar itself moves slowly.
+              onChunk: (chunk, totalChunks) {
+                if (!mounted) return;
+                setState(() => _phase = context.l.uploadingChunk(chunk, totalChunks));
+              },
             );
             if (!mounted) return null;
           }

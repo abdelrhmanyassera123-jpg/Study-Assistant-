@@ -343,9 +343,18 @@ abstract class Summarizer {
   /// المستخدم يشوفه ماشي.
   /// [onProgress] takes a fraction from 0 to 1: on a slow line the upload runs
   /// for minutes, and the user has to see it moving.
+  ///
+  /// [onChunk] بيتنادى لما ملف كبير بيتبعت على أجزاء — رقم الجزء الحالي
+  /// وإجمالي عددهم. نص واضح ("جزء 3 من 14") بيثبت إن حاجة بتتحرك فعلًا حتى
+  /// لو نسبة الرفع نفسها بطيئة تتحرك مرئيًا.
+  /// [onChunk] is called when a large file is sent in pieces — the current
+  /// chunk number and how many there are in total. Plain text ("part 3 of
+  /// 14") proves something is actually moving even when the percentage
+  /// itself moves too subtly to notice.
   Future<UploadedFile> upload(
     LectureFile file, {
     void Function(double fraction)? onProgress,
+    void Function(int chunk, int totalChunks)? onChunk,
   });
 
   /// بيعمل كروت مراجعة من محتوى مذاكرة.

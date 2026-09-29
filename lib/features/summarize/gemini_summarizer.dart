@@ -180,13 +180,14 @@ class GeminiSummarizer implements Summarizer {
   Future<UploadedFile> upload(
     LectureFile file, {
     void Function(double fraction)? onProgress,
+    void Function(int chunk, int totalChunks)? onChunk,
   }) async {
     _requireSignIn();
     _requireFitting([file]);
 
     return file.bytes.length <= _directUploadCeiling
         ? _uploadDirect(file, onProgress: onProgress)
-        : _uploadChunked(file, onProgress: onProgress);
+        : _uploadChunked(file, onProgress: onProgress, onChunk: onChunk);
   }
 
   Future<UploadedFile> _uploadDirect(
@@ -278,6 +279,7 @@ class GeminiSummarizer implements Summarizer {
   Future<UploadedFile> _uploadChunked(
     LectureFile file, {
     void Function(double fraction)? onProgress,
+    void Function(int chunk, int totalChunks)? onChunk,
   }) async {
     final startResponse = await _client.post(
       Uri.parse('${config.functionUrl}?action=upload_start'),
@@ -301,15 +303,24 @@ class GeminiSummarizer implements Summarizer {
     }
 
     final total = file.bytes.length;
+    final totalChunks = (total / _chunkBytes).ceil();
     final chunkUrl = Uri.parse('${config.functionUrl}?action=upload_chunk');
     Map<String, dynamic>? finalInfo;
     var offset = 0;
+    var chunkIndex = 0;
 
     while (offset < total) {
       final end = (offset + _chunkBytes < total) ? offset + _chunkBytes : total;
       final chunk = Uint8List.sublistView(file.bytes, offset, end);
       final isFinal = end >= total;
       final sentBefore = offset;
+      chunkIndex++;
+      // نص واضح بيتغيّر مع كل جزء — إثبات إن الرفع ماشي حتى لو حركة النسبة
+      // المئوية نفسها بطيئة يصعب ملاحظتها على ملف كبير.
+      // Plain text that changes with every chunk — proof the upload is
+      // moving even when the percentage itself shifts too slowly to notice
+      // on a large file.
+      onChunk?.call(chunkIndex, totalChunks);
 
       final headers = {
         ..._headers,
