@@ -1283,19 +1283,18 @@ class _StyledResultState extends State<_StyledResult> {
   Future<void> _export({required bool asPdf}) async {
     setState(() => _exporting = true);
     try {
+      // Blob + <a download> بيبدأ التنزيل بصمت — من غير رسالة هنا المستخدم
+      // بيضغط ومفيش أي رد فعل ظاهر، فبيفتكر إن الزرار مش شغال.
+      // A Blob + <a download> starts the download silently — without a
+      // message here the user presses the button, sees no visible reaction,
+      // and assumes it is broken.
+      final name = asPdf ? '$_fileName.pdf' : '$_fileName.png';
       if (asPdf) {
-        downloadBytes(
-          '$_fileName.pdf',
-          'application/pdf',
-          await capturePdf(widget.exportKey),
-        );
+        downloadBytes(name, 'application/pdf', await capturePdf(widget.exportKey));
       } else {
-        downloadBytes(
-          '$_fileName.png',
-          'image/png',
-          await capturePng(widget.exportKey),
-        );
+        downloadBytes(name, 'image/png', await capturePng(widget.exportKey));
       }
+      if (mounted) showSnack(context, context.l.exportDownloaded(name));
     } catch (e) {
       if (mounted) showSnack(context, '$e');
     } finally {

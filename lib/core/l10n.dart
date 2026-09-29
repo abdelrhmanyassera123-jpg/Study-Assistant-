@@ -855,6 +855,10 @@ class AppL10n {
       );
   String get exportPng => _('صورة PNG', 'PNG image');
   String get exportPdf => _('ملف PDF', 'PDF file');
+  String exportDownloaded(String fileName) => _(
+        'اتحفظ الملف ($fileName) — شوف مجلد التنزيلات.',
+        'Saved ($fileName) — check your Downloads folder.',
+      );
   String get styledPage => _('صفحة بشكلك', 'Your styled page');
   String get plainText => _('نص عادي', 'Plain text');
 }
