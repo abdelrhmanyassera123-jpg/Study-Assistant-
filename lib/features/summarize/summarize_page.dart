@@ -7,12 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design.dart';
 import '../../core/l10n.dart';
+import '../../core/launch_intent.dart';
 import '../../core/math_text.dart';
 import '../../core/settings.dart';
 import '../../core/share_target.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../jobs/jobs_panel.dart';
+import '../jobs/lecture_job.dart';
 import 'audio_clip.dart';
 import 'audio_input.dart';
 import 'document_text.dart';
@@ -76,6 +79,17 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   /// Bumped on every run or stop, so a stale reply arriving late is ignored.
   int _runId = 0;
 
+  /// المحاضرة اللي التطبيق اتفتح عشان يسجّلها من التنبيه. لو موجودة، التسجيل
+  /// أول ما يقف بيتبعت للتلخيص في الخلفية لوحده.
+  /// The lecture the reminder opened the app to record. When set, the
+  /// recording goes to the background summary by itself as soon as it stops.
+  ScheduleEntry? _autoEntry;
+  Timer? _autoStop;
+
+  /// وصف الرفع للخلفية وهو شغال ("بيرفع 2 من 5").
+  /// The background upload's progress while it runs ("uploading 2 of 5").
+  String? _queuePhase;
+
   @override
   void initState() {
     super.initState();
@@ -90,11 +104,52 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         if (mounted) _addPickedFile(shared);
       });
     }
+
+    final record = LaunchIntent.takeRecord();
+    if (record != null) _armFromSchedule(record);
+    final job = LaunchIntent.takeJob();
+    if (job != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) openJobResult(context, job);
+      });
+    }
+  }
+
+  /// بيجهّز الشاشة لمحاضرة من الجدول: المادة متختارة، والتسجيل على زرار واحد.
+  /// Readies the screen for a timetable lecture: the subject chosen, and the
+  /// recording one tap away.
+  Future<void> _armFromSchedule(String entryId) async {
+    final schedule = await ref.read(scheduleProvider.future);
+    final matches = schedule.where((e) => e.id == entryId);
+    if (matches.isEmpty || !mounted) return;
+    final entry = matches.first;
+    setState(() {
+      _autoEntry = entry;
+      if (entry.subjectId != null) _subjectId = entry.subjectId;
+    });
+  }
+
+  /// التسجيل بيقف لوحده بعد ميعاد نهاية المحاضرة بعشر دقايق، عشان لو نسيته
+  /// ما يفضلش يسجّل ساعات.
+  /// The recording stops on its own ten minutes after the lecture's end, so
+  /// a forgotten one does not run for hours.
+  void _scheduleAutoStop() {
+    final end = _autoEntry?.endMinutes;
+    if (end == null) return;
+    final now = DateTime.now();
+    final stopAt = DateTime(now.year, now.month, now.day).add(Duration(minutes: end + 10));
+    final wait = stopAt.difference(now);
+    if (wait.isNegative || wait > const Duration(hours: 4)) return;
+    _autoStop?.cancel();
+    _autoStop = Timer(wait, () {
+      if (mounted && _recorder != null) _finishRecording();
+    });
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    _autoStop?.cancel();
     _recorder?.dispose();
     _lecture.dispose();
     super.dispose();
@@ -130,6 +185,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       setState(() {});
       if (recorder.atTotalLimit) _finishRecording(limitHit: true);
     });
+    _scheduleAutoStop();
   }
 
   Future<void> _finishRecording({bool limitHit = false}) async {
@@ -138,11 +194,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
     _tick?.cancel();
     _tick = null;
+    _autoStop?.cancel();
 
     final stamp = TimeOfDay.fromDateTime(DateTime.now());
-    final name = '${context.l.recordingNoun} '
-        '${stamp.hour.toString().padLeft(2, '0')}:'
-        '${stamp.minute.toString().padLeft(2, '0')}';
+    final name = _autoEntry?.title ??
+        '${context.l.recordingNoun} '
+            '${stamp.hour.toString().padLeft(2, '0')}:'
+            '${stamp.minute.toString().padLeft(2, '0')}';
 
     final clip = await recorder.stop(name: name);
     recorder.dispose();
@@ -155,6 +213,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
     if (clip.isEmpty) {
       showSnack(context, context.l.recordingEmpty);
+    } else if (_autoEntry != null) {
+      await _queueInBackground();
     } else {
       showSnack(
         context,
@@ -501,6 +561,214 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     }
   }
 
+  // ------------------------------------------------ الخلفية / background
+
+  Map<String, dynamic> _jobRequest({required bool hasDocs, String? subjectId}) {
+    final settings = ref.read(settingsProvider);
+    final profiles = ref.read(styleProfilesProvider).value ?? const {};
+    final raw = profiles[subjectId] ?? profiles[null];
+    return buildJobRequest(
+      samples: pickStyleSamples(
+        ref.read(styleSamplesProvider).value ?? const <StyleSample>[],
+        subjectId,
+      ),
+      profile: raw == null ? const StyleProfile() : StyleProfile.fromJson(raw),
+      hasDocs: hasDocs,
+      model: settings.autoModel || settings.geminiModel.isEmpty
+          ? 'auto'
+          : settings.geminiModel,
+    );
+  }
+
+  static String _extFor(String mime) => switch (mime.split(';').first) {
+        'audio/webm' => 'webm',
+        'audio/mp4' => 'm4a',
+        'audio/ogg' => 'ogg',
+        'audio/mpeg' || 'audio/mp3' => 'mp3',
+        'audio/wav' => 'wav',
+        'audio/aac' => 'aac',
+        'audio/flac' => 'flac',
+        'application/pdf' => 'pdf',
+        _ => 'bin',
+      };
+
+  /// بيبعت اللي في الشاشة يتلخص على السيرفر: تقفل التطبيق براحتك، والتلخيص
+  /// والكروت والملاحظة بيتعملوا ويوصلك إشعار.
+  /// Sends what is on screen to be summarized on the server: close the app
+  /// freely; the summary, cards and note get made and a notification arrives.
+  Future<void> _queueInBackground() async {
+    final l = context.l;
+    if (!_hasInput) {
+      showSnack(context, l.needLectureText);
+      return;
+    }
+
+    final audio = [
+      for (final clip in _clips)
+        for (var i = 0; i < clip.parts.length; i++)
+          JobFile(
+            name: '${clip.name}-$i.${_extFor(clip.mimeType)}',
+            mimeType: clip.mimeType,
+            bytes: clip.parts[i],
+          ),
+    ];
+    final docs = [
+      for (final d in _docs) JobFile(name: d.name, mimeType: d.mimeType, bytes: d.bytes),
+    ];
+    if ([...audio, ...docs].any((f) => f.bytes.length > maxJobFileBytes)) {
+      showSnack(context, l.tooBigForBackground);
+      return;
+    }
+
+    final now = DateTime.now();
+    final entry = _autoEntry;
+    final title = entry != null
+        ? '${entry.title} ${now.day}/${now.month}'
+        : (_extracted?.fileName ??
+                (_docs.isNotEmpty ? _docs.first.name : null) ??
+                (_clips.isNotEmpty ? _clips.first.name : null) ??
+                '${l.lectureNoun} ${now.day}/${now.month}')
+            .replaceAll(RegExp(r'\.[^.]+$'), '');
+
+    setState(() => _queuePhase = l.uploadingForBackground(0, audio.length + docs.length));
+    try {
+      await ref.read(lectureJobsProvider).enqueue(
+            title: title,
+            subjectId: _subjectId,
+            scheduleEntryId: entry?.id,
+            audio: audio,
+            docs: docs,
+            plainText: _lecture.text.trim(),
+            request: _jobRequest(hasDocs: docs.isNotEmpty, subjectId: _subjectId),
+            onUpload: (done, total) {
+              if (mounted) setState(() => _queuePhase = l.uploadingForBackground(done, total));
+            },
+          );
+      if (!mounted) return;
+      setState(() {
+        _queuePhase = null;
+        _clips.clear();
+        _docs.clear();
+        _extracted = null;
+        _lecture.clear();
+        _autoEntry = null;
+      });
+      ref.invalidate(recentJobsProvider);
+      showSnack(context, l.queuedForBackground);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _queuePhase = null);
+      // التسجيل فاضل في الشاشة: لو الرفع وقع، ينفع يتلخص هنا أو يتعاد.
+      // The recording stays on screen: if the upload failed, it can be
+      // summarized here or retried.
+      showSnack(context, '${l.backgroundFailed}\n$e');
+    }
+  }
+
+  /// بيرفع محاضرات كتير مرة واحدة، كل واحدة شغل لوحدها في الخلفية.
+  /// Uploads many lectures at once, each its own background job.
+  Future<void> _batchUpload() async {
+    final l = context.l;
+    final picked = await pickLocalFiles(
+      extensions: [...supportedDocumentExtensions, ...supportedAudioExtensions],
+      mimeTypes: const ['audio/*'],
+    );
+    if (picked.isEmpty || !mounted) return;
+
+    // ملفات الوورد والباوربوينت بتتحول نص هنا؛ الـ PDF والصوت بيترفعوا زي ما هما.
+    // Word and PowerPoint files become text here; PDFs and audio are uploaded
+    // as they are.
+    final files = <BatchFile>[];
+    final extracted = <BatchFile, String>{};
+    for (final f in picked) {
+      final audio = isAudioFile(f.name);
+      final file = BatchFile(
+        name: f.name,
+        mimeType: audio ? audioMimeFor(f.name) : f.mimeType,
+        bytes: f.bytes,
+        modified: f.modified,
+      );
+      if (!audio && !isModelReadable(f.name)) {
+        try {
+          final doc = extractDocumentText(f.name, f.bytes);
+          if (doc.isEmpty) continue;
+          extracted[file] = doc.text;
+        } catch (_) {
+          continue;
+        }
+      }
+      if (f.bytes.length > maxJobFileBytes) continue;
+      files.add(file);
+    }
+
+    final schedule = ref.read(scheduleProvider).value ?? const <ScheduleEntry>[];
+    final lectures = groupBatch(files, schedule);
+    if (lectures.isEmpty) {
+      showSnack(context, l.unsupportedFileType);
+      return;
+    }
+
+    final subjects = ref.read(subjectMapProvider);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.batchConfirmTitle(lectures.length)),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final lec in lectures)
+                ListTile(
+                  dense: true,
+                  leading: Icon(lec.audio.isEmpty
+                      ? Icons.description_outlined
+                      : Icons.graphic_eq_rounded),
+                  title: Text(lec.title),
+                  subtitle: Text([
+                    subjects[lec.entry?.subjectId ?? _subjectId]?.name ?? l.noSubject,
+                    if (lec.docs.isNotEmpty) l.withFiles(lec.docs.length),
+                  ].join(' · ')),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.summarizeAll)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final jobs = ref.read(lectureJobsProvider);
+    var queued = 0;
+    for (var i = 0; i < lectures.length; i++) {
+      final lec = lectures[i];
+      final subjectId = lec.entry?.subjectId ?? _subjectId;
+      final modelDocs = lec.docs.where((d) => !extracted.containsKey(d)).toList();
+      setState(() => _queuePhase = l.batchProgress(i + 1, lectures.length));
+      try {
+        await jobs.enqueue(
+          title: lec.title,
+          subjectId: subjectId,
+          scheduleEntryId: lec.entry?.id,
+          audio: [for (final a in lec.audio) a.asJobFile],
+          docs: [for (final d in modelDocs) d.asJobFile],
+          plainText: [for (final d in lec.docs) extracted[d] ?? ''].where((t) => t.isNotEmpty).join('\n\n'),
+          request: _jobRequest(hasDocs: modelDocs.isNotEmpty, subjectId: subjectId),
+        );
+        queued++;
+      } catch (e) {
+        if (mounted) showSnack(context, '${lec.title}: $e');
+      }
+    }
+    if (!mounted) return;
+    setState(() => _queuePhase = null);
+    ref.invalidate(recentJobsProvider);
+    showSnack(context, l.batchQueued(queued));
+  }
+
   Future<void> _saveAsNote() async {
     final l = context.l;
     final source = _extracted?.fileName ??
@@ -555,6 +823,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: Insets.sm),
+            const JobsPanel(),
+            const SizedBox(height: Insets.lg),
 
             // ------------------------------------------- 1. المحتوى / content
             StepCard(
@@ -565,6 +835,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_autoEntry != null) ...[
+                    InfoBanner(
+                      icon: Icons.event_available_rounded,
+                      message: l.autoLectureReady(_autoEntry!.title),
+                    ),
+                    const SizedBox(height: Insets.md),
+                  ],
                   // زرارين متساويين: التسجيل مش ميزة مخبية جنب رفع الملف، هو
                   // الطريقة التانية اللي المحاضرة بتوصل بيها.
                   // Two buttons of equal weight: recording is not a feature
@@ -612,6 +889,15 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       onDiscard: _discardRecording,
                     ),
 
+                  if (_recorder == null)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        onPressed: _running || _queuePhase != null ? null : _batchUpload,
+                        icon: const Icon(Icons.library_add_outlined, size: 19),
+                        label: Text(l.batchUpload),
+                      ),
+                    ),
                   const SizedBox(height: Insets.sm),
                   Text(
                     '${l.supportedFiles} · ${l.supportedAudio}',
@@ -770,6 +1056,20 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                         modelChosen ? l.generateSummary : l.chooseModelFirst,
                       ),
                     ),
+
+                  // نفس المحاضرة، بس على السيرفر: ينفع تقفل التطبيق.
+                  // The same lecture, but on the server: the app can be closed.
+                  if (!_running) ...[
+                    const SizedBox(height: Insets.sm),
+                    if (_queuePhase != null)
+                      ProgressBar(label: _queuePhase!)
+                    else
+                      OutlinedButton.icon(
+                        onPressed: modelChosen && hasInput ? _queueInBackground : null,
+                        icon: const Icon(Icons.cloud_upload_outlined, size: 19),
+                        label: Text(l.summarizeInBackground),
+                      ),
+                  ],
 
                   if (_error != null) ...[
                     const SizedBox(height: Insets.lg),

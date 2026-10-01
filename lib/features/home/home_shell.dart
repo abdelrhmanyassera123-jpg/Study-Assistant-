@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
+import '../../core/launch_intent.dart';
 import '../../core/share_target.dart';
 import '../dashboard/dashboard_page.dart';
 import '../flashcards/flashcards_page.dart';
@@ -75,7 +76,9 @@ enum AppSection {
 class SectionNotifier extends Notifier<AppSection> {
   @override
   AppSection build() =>
-      SharedFile.hasPending ? AppSection.summarize : AppSection.dashboard;
+      SharedFile.hasPending || LaunchIntent.hasPending
+          ? AppSection.summarize
+          : AppSection.dashboard;
 
   void go(AppSection section) => state = section;
 }

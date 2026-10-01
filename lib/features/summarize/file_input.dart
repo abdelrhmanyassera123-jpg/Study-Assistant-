@@ -11,10 +11,16 @@ class PickedFile {
     required this.name,
     required this.bytes,
     required this.mimeType,
+    this.modified,
   });
 
   final String name;
   final Uint8List bytes;
+
+  /// آخر تعديل للملف — للتسجيل ده ميعاد ما خلص، فبيدل على المحاضرة.
+  /// The file's last change; for a recording, when it ended, which points to
+  /// the lecture.
+  final DateTime? modified;
 
   /// نوع الملف زي ما المتصفح شافه — بيتبعت للموديل مع الملف.
   /// The browser's own view of the type; sent to the model with the file.
@@ -106,6 +112,7 @@ Future<List<PickedFile>> pickLocalFiles({
                 // Some browsers leave the type blank; fall back to the extension.
                 mimeType:
                     file.type.isNotEmpty ? file.type : _mimeFromName(file.name),
+                modified: DateTime.fromMillisecondsSinceEpoch(file.lastModified),
               );
             }
             settle();

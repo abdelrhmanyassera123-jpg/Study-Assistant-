@@ -913,6 +913,47 @@ class AppL10n {
   String get makingRevisionPack => _('بيجمّع المادة كلها في ملزمة...', 'Gathering the subject into a pack...');
   String get subjectMockExam => _('امتحان تجريبي على المادة كلها', 'Mock exam on the whole subject');
   String reviewWeakCards(int n) => isAr ? 'الكروت الضعيفة ($n)' : 'Weak cards ($n)';
+  String get summarizeInBackground => _('لخّص في الخلفية (ينفع تقفل التطبيق)', 'Summarize in the background (you can close the app)');
+  String uploadingForBackground(int done, int total) => isAr
+      ? 'بيرفع للسيرفر $done من $total...'
+      : 'Uploading $done of $total...';
+  String get queuedForBackground => _(
+        'اتبعتت للتلخيص في الخلفية — هيوصلك إشعار لما التلخيص والكروت يخلصوا.',
+        "Sent off — you'll get a notification when the summary and cards are ready.",
+      );
+  String get backgroundFailed => _('الرفع وقع — التسجيل لسه موجود هنا.', 'The upload failed — the recording is still here.');
+  String get tooBigForBackground => _(
+        'فيه ملف أكبر من 48 ميجا — لخّصه هنا بزرار "لخّص".',
+        'A file is over 48 MB — summarize it here with the main button.',
+      );
+  String get lectureNoun => _('محاضرة', 'Lecture');
+  String get batchUpload => _('رفع محاضرات كتير مرة واحدة', 'Upload many lectures at once');
+  String batchConfirmTitle(int n) => isAr ? 'تلخيص $n محاضرة في الخلفية' : 'Summarize $n lectures in the background';
+  String withFiles(int n) => isAr ? '$n ملف' : '$n file${n == 1 ? '' : 's'}';
+  String get summarizeAll => _('لخّصهم كلهم', 'Summarize all');
+  String batchProgress(int i, int n) => isAr ? 'بيرفع المحاضرة $i من $n...' : 'Uploading lecture $i of $n...';
+  String batchQueued(int n) => isAr
+      ? '$n محاضرة اتبعتت للتلخيص — هيوصلك إشعار لكل واحدة.'
+      : '$n lectures sent — a notification will come for each.';
+  String autoLectureReady(String title) => isAr
+      ? '$title — دوس "سجّل المحاضرة". لما توقف، التلخيص والكروت هيتعملوا لوحدهم في الخلفية.'
+      : '$title — press record. When you stop, the summary and cards get made in the background.';
+  String get backgroundJobs => _('بيتلخص في الخلفية', 'Summarizing in the background');
+  String get backgroundJobsHint => _(
+        'بيكمّل حتى لو التطبيق مقفول، وبيوصلك إشعار لما يخلص. دوس على اللي خلص تفتحه.',
+        'Continues with the app closed and notifies you when done. Tap a finished one to open it.',
+      );
+  String get jobQueued => _('مستني دوره', 'Waiting its turn');
+  String get jobRetrying => _('هيحاول تاني كمان شوية', 'Will try again shortly');
+  String jobTranscribing(int i, int n) => isAr
+      ? (n == 1 ? 'بيفرّغ التسجيل' : 'بيفرّغ المقطع $i من $n')
+      : (n == 1 ? 'Transcribing' : 'Transcribing part $i of $n');
+  String get jobSummarizing => _('بيلخّص', 'Summarizing');
+  String get jobCheckingMissed => _('بيدوّر على النقط الناقصة', 'Checking for missed points');
+  String get jobMakingCards => _('بيحفظ الملاحظة ويعمل كروت', 'Saving the note and making cards');
+  String get jobDone => _('جاهز', 'Ready');
+  String jobDoneWithCards(int n) => isAr ? 'جاهز · $n كارت' : 'Ready · $n cards';
+  String get jobFailed => _('ما كملش', "Didn't finish");
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

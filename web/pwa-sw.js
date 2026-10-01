@@ -102,7 +102,14 @@ self.addEventListener("push", (event) => {
     badge: "icons/Icon-192.png",
     silent: !!data.silent,
     vibrate: Array.isArray(data.vibrate) ? data.vibrate : [200, 100, 200],
-    data: { url: "./" },
+    data: {
+      url: data.url || "./",
+      actions: Array.isArray(data.actions) ? data.actions : [],
+    },
+    actions: (Array.isArray(data.actions) ? data.actions : []).map((a) => ({
+      action: a.action,
+      title: a.title,
+    })),
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -112,13 +119,24 @@ self.addEventListener("push", (event) => {
 // Tapping the notification focuses an existing tab or opens a new one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "./";
+  const data = event.notification.data || {};
+  // زرار جوه التنبيه ليه صفحته؛ الضغط على التنبيه نفسه بيفتح صفحته العامة.
+  // A button inside the notification has its own page; tapping the
+  // notification itself opens its general one.
+  const action = (data.actions || []).find((a) => a.action === event.action);
+  const url = (action && action.url) || data.url || "./";
+  const target = new URL(url, self.registration.scope).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const client of list) {
+        // التاب المفتوح بيروح للصفحة المطلوبة بدل ما يتفتح تاب تاني.
+        // An open tab goes to the requested page instead of opening another.
+        if ("navigate" in client && target !== self.registration.scope) {
+          return client.navigate(target).then((c) => (c || client).focus());
+        }
         if ("focus" in client) return client.focus();
       }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
+      if (self.clients.openWindow) return self.clients.openWindow(target);
     }),
   );
 });

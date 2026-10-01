@@ -26,7 +26,7 @@ const CORS_HEADERS: Record<string, string> = {
   // is even sent when one of them is not allowed.
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, " +
-    "x-file-mime, x-file-size, x-file-name, " +
+    "x-file-mime, x-file-size, x-file-name, x-worker-secret, x-act-as, " +
     "x-upload-url, x-upload-offset, x-upload-final, x-chunk-size",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -66,6 +66,18 @@ function isSignedInUser(req: Request): boolean {
   }
 }
 
+/// نداء من lecture-worker بالنيابة عن مستخدم: السر نفسه اللي الكرون بيستخدمه،
+/// ومعاه id المستخدم. البوابة بتتأكد من الـ JWT (مفتاح الخدمة) قبل ما نوصل هنا.
+/// A call from lecture-worker on a user's behalf: the same secret the cron
+/// uses, plus that user's id. The gateway has already verified the JWT (the
+/// service key) before we get here.
+function workerUser(req: Request): string | null {
+  const secret = Deno.env.get("CRON_SECRET") ?? "";
+  const userId = req.headers.get("x-act-as") ?? "";
+  if (!secret || req.headers.get("x-worker-secret") !== secret) return null;
+  return /^[0-9a-f-]{36}$/i.test(userId) ? userId : null;
+}
+
 /// بيدوّر على مفتاح Gemini شخصي للمستخدم اللي بينادي، من جدول
 /// "user_api_keys" — بيرجّع null لو مالوش مفتاح شخصي محفوظ.
 ///
@@ -85,11 +97,16 @@ async function personalApiKey(req: Request): Promise<string | null> {
   const auth = req.headers.get("Authorization");
   if (!supabaseUrl || !anonKey || !auth) return null;
 
+  // العامل معاه مفتاح الخدمة، فالـ RLS مش هتحصر الصف — بنفلتر بالـ id صريح.
+  // The worker carries the service key, so RLS will not scope the row; filter
+  // by id explicitly.
+  const actingFor = workerUser(req);
+  const url = actingFor
+    ? `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&user_id=eq.${actingFor}&limit=1`
+    : `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&limit=1`;
+
   try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&limit=1`,
-      { headers: { apikey: anonKey, Authorization: auth } },
-    );
+    const res = await fetch(url, { headers: { apikey: anonKey, Authorization: auth } });
     if (!res.ok) return null;
     const rows = await res.json();
     const key = rows?.[0]?.gemini_api_key;
@@ -948,7 +965,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "POST only" }, 405);
   }
 
-  if (!isSignedInUser(req)) {
+  if (!isSignedInUser(req) && !workerUser(req)) {
     return json({ error: "لازم تكون مسجّل دخول." }, 401);
   }
 

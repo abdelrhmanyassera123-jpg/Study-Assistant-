@@ -201,6 +201,13 @@ class SummaryBlock {
           .toList(),
       colorIndex: (m['color_index'] as num?)?.toInt() ?? 0,
       query: (m['query'] as String?)?.trim() ?? '',
+      // بس روابط ويكيميديا اللي إحنا جبناها: الموديل لو كتب رابط من عنده
+      // ما يتحمّلش.
+      // Only the Wikimedia links we fetched ourselves: a link the model wrote
+      // on its own is not loaded.
+      imageUrl: '${m['image_url'] ?? ''}'.startsWith('https://upload.wikimedia.org/')
+          ? m['image_url'] as String
+          : null,
     );
   }
 
@@ -222,6 +229,7 @@ class SummaryBlock {
         if (text.isNotEmpty) 'text': text,
         if (items.isNotEmpty) 'items': items,
         if (query.isNotEmpty) 'query': query,
+        if (imageUrl != null) 'image_url': imageUrl,
         'color_index': colorIndex,
       };
 
@@ -262,6 +270,11 @@ class SummaryPage {
       ['# $title', for (final b in blocks) b.toPlainText()]
           .where((t) => t.isNotEmpty)
           .join('\n\n');
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'blocks': [for (final b in blocks) b.toJson()],
+      };
 
   SummaryPage withBlocks(List<SummaryBlock> blocks) =>
       SummaryPage(title: title, blocks: blocks);
