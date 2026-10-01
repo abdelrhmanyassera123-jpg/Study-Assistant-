@@ -12,6 +12,7 @@ import '../flashcards/review_page.dart';
 import '../home/home_shell.dart';
 import '../notes/notes_page.dart';
 import '../tasks/tasks_page.dart';
+import 'today_card.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -41,6 +42,8 @@ class DashboardPage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const _WelcomeCard(),
+            const SizedBox(height: Insets.lg),
+            const TodayCard(),
             const SizedBox(height: Insets.xxl),
 
             StatGrid(

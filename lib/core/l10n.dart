@@ -979,6 +979,10 @@ class AppL10n {
   String get writtenQuestion => _('كتابي', 'Written');
   String get answerLabel => _('الإجابة', 'Answer');
   String get askWholeSubject => _('اسأل في المادة كلها', 'Ask about the whole subject');
+  String get noPlanYet => _('مفيش خطة للأسبوع ده لسه.', 'No plan for this week yet.');
+  String get planRestDay => _('مفيش مذاكرة في الخطة النهاردة — راحة.', 'Nothing planned today — rest.');
+  String get startFocus => _('ابدأ مؤقت المذاكرة', 'Start the focus timer');
+  String get recordIt => _('سجّلها', 'Record it');
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

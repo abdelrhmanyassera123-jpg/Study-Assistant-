@@ -19,6 +19,10 @@ class LaunchIntent {
 
   static bool get hasPending => _record != null || _job != null;
 
+  /// من جوه التطبيق: زرار "سجّلها" في شاشة النهاردة.
+  /// From inside the app: the "record it" button on the Today card.
+  static void armRecord(String entryId) => _record = entryId;
+
   static String? takeRecord() {
     final id = _record;
     _record = null;

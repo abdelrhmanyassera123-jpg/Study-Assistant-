@@ -158,6 +158,9 @@ class PlanItem {
   final int minutes;
   final String why;
 
+  Map<String, dynamic> toJson() =>
+      {'what': what, 'minutes': minutes, 'why': why, 'time': time, 'kind': kind};
+
   /// "HH:MM" لو الموديل حدده.
   /// "HH:MM" when the model gave one.
   final String time;
@@ -211,6 +214,34 @@ class StudyPlan {
   final String note;
 
   bool get isEmpty => days.every((d) => d.items.isEmpty);
+
+  Map<String, dynamic> toJson() => {
+        'note': note,
+        'days': [
+          for (final d in days)
+            {
+              'weekday': d.weekday,
+              'focus': d.focus,
+              'items': [for (final i in d.items) i.toJson()],
+            },
+        ],
+      };
+
+  static StudyPlan fromJson(Map<String, dynamic> m) => StudyPlan(
+        note: '${m['note'] ?? ''}',
+        days: [
+          for (final d in (m['days'] as List? ?? const []))
+            if (d is Map)
+              PlanDay(
+                weekday: (d['weekday'] as num?)?.toInt() ?? 1,
+                focus: '${d['focus'] ?? ''}',
+                items: [
+                  for (final i in (d['items'] as List? ?? const []))
+                    if (i is Map) ?PlanItem.fromJson(i.map((k, v) => MapEntry('$k', v))),
+                ],
+              ),
+        ],
+      );
   int get totalMinutes => days.fold(0, (sum, d) => sum + d.totalMinutes);
 }
 

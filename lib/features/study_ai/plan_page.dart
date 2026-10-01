@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../widgets/common.dart';
 import '../summarize/summarizer.dart';
 import '../summarize/summarizer_provider.dart';
+import 'saved_plan.dart';
 import 'study_ai.dart';
 
 Future<void> openPlanPage(BuildContext context) => Navigator.of(context)
@@ -35,10 +36,20 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   @override
   void initState() {
     super.initState();
-    SharedPreferences.getInstance().then((p) {
+    SharedPreferences.getInstance().then((p) async {
       if (!mounted) return;
       setState(() => _dailyHours = p.getInt(_kHours) ?? 4);
-      _make();
+      // الخطة المحفوظة لسه صالحة؟ تتعرض على طول من غير نداء — الجديدة بزرار
+      // التحديث.
+      // Is the saved plan still current? Show it straight away without a call;
+      // a fresh one is a tap on refresh.
+      final saved = await ref.read(savedPlanProvider.future);
+      if (!mounted) return;
+      if (saved != null && saved.isCurrent) {
+        setState(() => _plan = saved.plan);
+      } else {
+        _make();
+      }
     });
   }
 
@@ -181,6 +192,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       final plan =
           await ref.read(activeSummarizerProvider).makePlan(_facts(context.l));
       if (mounted) setState(() => _plan = plan);
+      // بتتحفظ عشان شاشة "النهاردة" تعرض البند الجاي من غير نداء تاني.
+      // Saved so the "Today" card shows the next item without another call.
+      await ref.read(savedPlanProvider.notifier).save(plan);
     } on SummarizerException catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
