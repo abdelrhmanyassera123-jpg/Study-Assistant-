@@ -954,6 +954,10 @@ class AppL10n {
   String get jobDone => _('جاهز', 'Ready');
   String jobDoneWithCards(int n) => isAr ? 'جاهز · $n كارت' : 'Ready · $n cards';
   String get jobFailed => _('ما كملش', "Didn't finish");
+  String get picturesInSummary => _('الصور في التلخيص', 'Pictures in the summary');
+  String get picturesNone => _('بدون صور', 'None');
+  String get picturesWeb => _('توضيحية', 'Illustrations');
+  String get picturesSlides => _('+ السلايدات', '+ Slides');
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

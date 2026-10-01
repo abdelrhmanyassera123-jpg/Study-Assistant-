@@ -421,6 +421,7 @@ abstract class Summarizer {
     List<LectureFile> files,
     required List<StyleSample> samples,
     required StyleProfile profile,
+    ImageMode images,
   });
 
   /// بيعيد كتابة بلوك واحد حسب [instruction] (وسّع، بسّط، ...) ويرجّع

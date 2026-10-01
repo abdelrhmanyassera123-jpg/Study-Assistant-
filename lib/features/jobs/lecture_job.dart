@@ -27,6 +27,7 @@ class LectureJob {
     this.partCount = 0,
     this.transcript = '',
     this.pdfPaths = const [],
+    this.imageMode = ImageMode.web,
   });
 
   final String id;
@@ -52,6 +53,7 @@ class LectureJob {
   /// مسارات السلايدات (PDF) في التخزين، بترتيب إرفاقها للموديل.
   /// Storage paths of the slides (PDF), in the order they went to the model.
   final List<String> pdfPaths;
+  final ImageMode imageMode;
 
   bool get isDone => status == 'done';
   bool get isFailed => status == 'failed';
@@ -80,6 +82,7 @@ class LectureJob {
         for (final p in parts)
           if (p is Map && p['transcript'] is String) p['transcript'] as String,
       ].where((t) => t.trim().isNotEmpty).join('\n\n'),
+      imageMode: ImageMode.parse((m['request'] as Map?)?['image_mode']),
       pdfPaths: [
         for (final d in docs)
           if (d is Map && d['mime'] == 'application/pdf' && d['path'] is String)
@@ -109,13 +112,15 @@ Map<String, dynamic> buildJobRequest({
   required StyleProfile profile,
   required bool hasDocs,
   required String model,
+  ImageMode images = ImageMode.web,
 }) =>
     {
       'model': model,
       'transcribe_system': StudyPrompt.transcribeSystem,
       'transcribe_prompt': StudyPrompt.transcribePrompt,
       'no_speech_marker': StudyPrompt.noSpeechMarker,
-      'summary_system': VisualPrompts.blocksSystem(profile),
+      'image_mode': images.name,
+      'summary_system': VisualPrompts.blocksSystem(profile, images: images),
       'summary_prompt': StudyPrompt.build(
         lectureText: '{{LECTURE}}',
         hasFile: hasDocs,

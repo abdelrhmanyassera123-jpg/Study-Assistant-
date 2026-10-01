@@ -108,8 +108,9 @@ class _RevisionPageState extends ConsumerState<RevisionPage> {
             lectureText: brief.toString(),
             samples: samples,
             profile: raw == null ? const StyleProfile() : StyleProfile.fromJson(raw),
+            images: await savedImageMode(),
           );
-      page = await attachImages(page);
+      page = await attachImages(page, mode: await savedImageMode());
       if (mounted) setState(() => _page = page);
     } on SummarizerException catch (e) {
       if (mounted) setState(() => _error = e);

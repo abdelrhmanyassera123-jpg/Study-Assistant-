@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'style_profile.dart';
 
@@ -26,8 +27,18 @@ external JSPromise<JSArray<JSUint8Array?>> _renderPdfPages(
 Future<SummaryPage> attachImages(
   SummaryPage page, {
   List<Uint8List> pdfs = const [],
+  ImageMode mode = ImageMode.web,
   http.Client? client,
 }) async {
+  // الاختيار بيتطبق هنا كمان مش في البرومبت بس: الموديل ساعات بيحط صورة
+  // حتى لو اتقاله لأ.
+  // The choice is enforced here too, not only in the prompt: the model
+  // sometimes adds a picture even when told not to.
+  if (mode == ImageMode.none) {
+    return page.withBlocks(page.blocks.where((b) => b.type != BlockType.image).toList());
+  }
+  if (mode == ImageMode.web) pdfs = const [];
+
   final images = page.blocks
       .where((b) => b.type == BlockType.image && !b.hasPicture)
       .toList();
@@ -60,6 +71,26 @@ Future<SummaryPage> attachImages(
   } finally {
     if (client == null) c.close();
   }
+}
+
+const _kImageMode = 'summary_image_mode';
+
+/// اختيار الصور المحفوظ — بيتشارك بين التلخيص والمراجعة.
+/// The saved picture choice, shared by summaries and revision packs.
+Future<ImageMode> savedImageMode() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    return ImageMode.parse(p.getString(_kImageMode));
+  } catch (_) {
+    return ImageMode.web;
+  }
+}
+
+Future<void> saveImageMode(ImageMode mode) async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kImageMode, mode.name);
+  } catch (_) {}
 }
 
 /// بيرسم صفحات السلايدات المطلوبة، ملف ملف. أي فشل (pdf.js ما اتحمّلش، رقم

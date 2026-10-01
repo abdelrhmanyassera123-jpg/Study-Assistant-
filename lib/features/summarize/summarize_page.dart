@@ -86,6 +86,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   ScheduleEntry? _autoEntry;
   Timer? _autoStop;
 
+  ImageMode _imageMode = ImageMode.web;
+
   /// وصف الرفع للخلفية وهو شغال ("بيرفع 2 من 5").
   /// The background upload's progress while it runs ("uploading 2 of 5").
   String? _queuePhase;
@@ -104,6 +106,10 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         if (mounted) _addPickedFile(shared);
       });
     }
+
+    savedImageMode().then((m) {
+      if (mounted) setState(() => _imageMode = m);
+    });
 
     final record = LaunchIntent.takeRecord();
     if (record != null) _armFromSchedule(record);
@@ -547,11 +553,12 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         profile: rawProfile == null
             ? const StyleProfile()
             : StyleProfile.fromJson(rawProfile),
+        images: _imageMode,
       );
       if (!mounted || run != _runId) return;
       if (page.blocks.any((b) => b.type == BlockType.image)) {
         setState(() => _phase = context.l.findingImages);
-        page = await attachImages(page, pdfs: _pdfs);
+        page = await attachImages(page, pdfs: _pdfs, mode: _imageMode);
         if (!mounted || run != _runId) return;
       }
       setState(() {
@@ -583,6 +590,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       ),
       profile: raw == null ? const StyleProfile() : StyleProfile.fromJson(raw),
       hasDocs: hasDocs,
+      images: _imageMode,
       model: settings.autoModel || settings.geminiModel.isEmpty
           ? 'auto'
           : settings.geminiModel,
@@ -1018,6 +1026,35 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                     onChanged: (v) => setState(() => _subjectId = v),
                   ),
                   const SizedBox(height: Insets.lg),
+                  Text(l.picturesInSummary,
+                      style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: Insets.sm),
+                  SegmentedButton<ImageMode>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(
+                        value: ImageMode.none,
+                        icon: const Icon(Icons.hide_image_outlined, size: 18),
+                        label: Text(l.picturesNone),
+                      ),
+                      ButtonSegment(
+                        value: ImageMode.web,
+                        icon: const Icon(Icons.image_outlined, size: 18),
+                        label: Text(l.picturesWeb),
+                      ),
+                      ButtonSegment(
+                        value: ImageMode.slides,
+                        icon: const Icon(Icons.slideshow_outlined, size: 18),
+                        label: Text(l.picturesSlides),
+                      ),
+                    ],
+                    selected: {_imageMode},
+                    onSelectionChanged: (s) {
+                      setState(() => _imageMode = s.first);
+                      saveImageMode(s.first);
+                    },
+                  ),
+                  const SizedBox(height: Insets.lg),
                   _StyleBanner(
                     usedCount: samples.length,
                     totalCount: allSamples.length,
@@ -1096,7 +1133,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       ),
                       subjectId: _subjectId,
                       source: _source,
-                      pdfs: _pdfs,
+                      pdfs: _imageMode == ImageMode.slides ? _pdfs : const [],
                       onPageChanged: (page) => setState(() => _page = page),
                       onSaveNote: _saveAsNote,
                     ),

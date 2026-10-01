@@ -196,7 +196,7 @@ class _JobResultPageState extends ConsumerState<JobResultPage> {
       if (job != null &&
           page != null &&
           page.blocks.any((b) => b.type == BlockType.image && !b.hasPicture)) {
-        page = await attachImages(page, pdfs: pdfs);
+        page = await attachImages(page, pdfs: pdfs, mode: job.imageMode);
         await jobs.saveResult(job.id, page);
       }
       if (mounted) {
@@ -276,7 +276,7 @@ class _JobResultPageState extends ConsumerState<JobResultPage> {
                             : StyleProfile.fromJson(raw),
                         subjectId: job.subjectId,
                         source: job.transcript,
-                        pdfs: _pdfs,
+                        pdfs: job.imageMode == ImageMode.slides ? _pdfs : const [],
                         onPageChanged: _changed,
                         onSaveNote: _saveNote,
                       ),

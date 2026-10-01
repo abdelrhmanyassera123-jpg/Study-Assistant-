@@ -615,6 +615,7 @@ class GeminiSummarizer implements Summarizer {
     List<LectureFile> files = const [],
     required List<StyleSample> samples,
     required StyleProfile profile,
+    ImageMode images = ImageMode.web,
   }) async {
     _requireFitting(files);
 
@@ -627,7 +628,7 @@ class GeminiSummarizer implements Summarizer {
     final result = await _postJson({
       'action': 'json',
       'model': config.requestedModel,
-      'system': VisualPrompts.blocksSystem(profile),
+      'system': VisualPrompts.blocksSystem(profile, images: images),
       'prompt': StudyPrompt.build(
         lectureText: lectureText,
         hasFile: files.isNotEmpty,
