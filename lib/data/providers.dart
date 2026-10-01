@@ -63,20 +63,39 @@ final styleSamplesProvider =
 /// بيختار العينات اللي هتتبعت للموديل: بتاعة المادة الأول، وبعدين العامة.
 /// Picks which samples go into the prompt: subject-specific first, then general.
 ///
-/// بنقف عند [limit] لأن نقل الأسلوب بيوصل لأقصاه عند حوالي 4 أمثلة —
-/// بعد كده الأمثلة الزيادة بتميّع الأسلوب بدل ما توضحه.
-/// We cap at [limit] because style transfer peaks around four examples; extra
-/// ones dilute the voice instead of sharpening it.
+/// كلهم بيتبعتوا لحد سقف حجم مش عدد: المستخدم اللي حاطط 23 مثال عايزهم كلهم
+/// يتشافوا، والموديل بياخد مليون توكن. السقف بس عشان أمثلة طويلة جدًا ما
+/// تاكلش حصة الدقيقة في طلب واحد. المثال اللي ما يكملش بيتقص بدل ما يتشال.
+/// All of them go in, up to a size ceiling rather than a count: someone who
+/// saved 23 examples wants all 23 seen, and the model takes a million tokens.
+/// The ceiling only stops very long examples eating a minute's quota in one
+/// request. An example that does not fit is cut short rather than dropped.
 List<StyleSample> pickStyleSamples(
   List<StyleSample> all,
   String? subjectId, {
-  int limit = 4,
+  int maxChars = 60000,
 }) {
   final forSubject = all.where((s) => s.subjectId == subjectId && subjectId != null);
   final general = all.where((s) => s.subjectId == null);
   final others = all.where((s) => s.subjectId != null && s.subjectId != subjectId);
 
-  return [...forSubject, ...general, ...others].take(limit).toList();
+  final picked = <StyleSample>[];
+  var left = maxChars;
+  for (final s in [...forSubject, ...general, ...others]) {
+    if (left < 400) break;
+    final body = s.body.trim();
+    picked.add(body.length <= left
+        ? s
+        : StyleSample(
+            id: s.id,
+            title: s.title,
+            body: '${body.substring(0, left)}…',
+            subjectId: s.subjectId,
+            createdAt: s.createdAt,
+          ));
+    left -= body.length;
+  }
+  return picked;
 }
 
 /// خريطة id -> مادة، عشان نعرض اسم/لون المادة جنب أي عنصر.

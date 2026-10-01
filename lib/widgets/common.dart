@@ -166,7 +166,9 @@ class StepCard extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return AppCard(
-      child: Column(
+      child: LayoutBuilder(builder: (context, constraints) {
+        final stackTrailing = constraints.maxWidth < 520;
+        return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -208,16 +210,24 @@ class StepCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) ...[
+              if (trailing != null && !stackTrailing) ...[
                 const SizedBox(width: Insets.sm),
                 trailing!,
               ],
             ],
           ),
+          // على الموبايل الزرار جنب العنوان بيعصر الشرح كلمة في كل سطر.
+          // On a phone a button beside the title squeezes the hint to one
+          // word per line.
+          if (trailing != null && stackTrailing) ...[
+            const SizedBox(height: Insets.md),
+            Align(alignment: AlignmentDirectional.centerStart, child: trailing!),
+          ],
           const SizedBox(height: Insets.xl),
           child,
         ],
-      ),
+      );
+      }),
     );
   }
 }

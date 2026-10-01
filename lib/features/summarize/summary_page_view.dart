@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/math_text.dart';
-import '../../widgets/math_spans.dart';
+import '../../widgets/tex_text.dart';
 import 'style_profile.dart';
 
 /// بيرسم التلخيص كصفحة بألوان المستخدم وتخطيطه.
@@ -53,8 +52,8 @@ class SummaryPageView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (page.title.trim().isNotEmpty) ...[
-              MathText(
-                readableMath(page.title),
+              TexText(
+                page.title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
@@ -103,8 +102,8 @@ class SummaryBlockView extends StatelessWidget {
             Container(width: 5, height: 22, color: color),
             const SizedBox(width: 10),
             Expanded(
-              child: MathText(
-                readableMath(block.text),
+              child: TexText(
+                block.text,
                 style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w800,
@@ -142,7 +141,7 @@ class SummaryBlockView extends StatelessWidget {
                 ),
               Padding(
                 padding: const EdgeInsets.all(14),
-                child: MathText(readableMath(block.text), style: body),
+                child: TexText(block.text, style: body),
               ),
             ],
           ),
@@ -166,7 +165,7 @@ class SummaryBlockView extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                        child: MathText(readableMath(item), style: body)),
+                        child: TexText(item, style: body)),
                   ],
                 ),
               ),
@@ -201,7 +200,7 @@ class SummaryBlockView extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                         child:
-                            MathText(readableMath(block.items[i]), style: body)),
+                            TexText(block.items[i], style: body)),
                   ],
                 ),
               ),
@@ -217,13 +216,13 @@ class SummaryBlockView extends StatelessWidget {
               start: BorderSide(color: color, width: 4),
             ),
           ),
-          child: MathText(
-            readableMath(block.text),
+          child: TexText(
+            block.text,
             style: body.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
-      BlockType.note => MathText(
-          readableMath(block.text),
+      BlockType.note => TexText(
+          block.text,
           style: body.copyWith(
             fontSize: 14,
             color: onPaper.withValues(alpha: 0.75),
@@ -276,8 +275,8 @@ class _Figure extends StatelessWidget {
         ),
         if (block.text.trim().isNotEmpty) ...[
           const SizedBox(height: 6),
-          MathText(
-            readableMath(block.text),
+          TexText(
+            block.text,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -579,8 +578,8 @@ class _PagedSummaryState extends State<PagedSummary> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        MathText(
-          readableMath(widget.page.title),
+        TexText(
+          widget.page.title,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 26,
