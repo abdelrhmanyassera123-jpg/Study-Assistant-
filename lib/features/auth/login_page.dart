@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/design.dart';
 import '../../core/l10n.dart';
+import '../../widgets/install_banner.dart';
 import '../../core/settings.dart';
 import '../../data/providers.dart';
 import '../../widgets/common.dart';
@@ -97,6 +98,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Column(
       children: [
+        const InstallBanner(),
         Align(
           alignment: AlignmentDirectional.centerEnd,
           child: Padding(

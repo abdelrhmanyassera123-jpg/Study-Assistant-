@@ -61,6 +61,34 @@
   <div id="boot"><div class="ring"></div></div>
 
   <script>
+    // إذن التثبيت بيوصل مرة واحدة، وممكن قبل ما فلاتر يحمّل — فبيتمسك هنا بدري
+    // والتطبيق بيعرض زرار "ثبّت" بتاعه. preventDefault بيمنع شريط كروم الصغير
+    // عشان ما يظهرش اتنين.
+    // The install permission arrives once, possibly before Flutter has
+    // loaded, so it is caught here early and the app shows its own "Install"
+    // button. preventDefault stops Chrome's mini-infobar so two never show.
+    window.__installPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.__installPrompt = e;
+      window.dispatchEvent(new Event('install-available'));
+    });
+    window.addEventListener('appinstalled', function () {
+      window.__installPrompt = null;
+      window.dispatchEvent(new Event('install-available'));
+    });
+    window.canInstallApp = function () { return !!window.__installPrompt; };
+    window.installApp = function () {
+      var p = window.__installPrompt;
+      if (!p) return Promise.resolve('unavailable');
+      window.__installPrompt = null;
+      p.prompt();
+      return p.userChoice.then(function (c) {
+        window.dispatchEvent(new Event('install-available'));
+        return c.outcome;
+      });
+    };
+
     window.addEventListener('flutter-first-frame', function () {
       var boot = document.getElementById('boot');
       if (!boot) return;

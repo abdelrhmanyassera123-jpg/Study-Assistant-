@@ -5,6 +5,7 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
 import '../../core/launch_intent.dart';
+import '../../widgets/install_banner.dart';
 import '../../data/offline_sync.dart';
 import '../../core/share_target.dart';
 import '../dashboard/dashboard_page.dart';
@@ -125,7 +126,11 @@ class HomeShell extends ConsumerWidget {
       // من غير ما يتحوّل لانتظار.
       // A light cross-fade between sections: enough to show the page changed,
       // without turning navigation into waiting.
-      body: AnimatedSwitcher(
+      body: Column(
+        children: [
+          const InstallBanner(),
+          Expanded(
+            child: AnimatedSwitcher(
         duration: Motion.normal,
         switchInCurve: Motion.ease,
         transitionBuilder: (child, animation) => FadeTransition(
@@ -139,6 +144,9 @@ class HomeShell extends ConsumerWidget {
           ),
         ),
         child: KeyedSubtree(key: ValueKey(section), child: section.page),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: hasRail ? null : _BottomBar(section: section),
     );

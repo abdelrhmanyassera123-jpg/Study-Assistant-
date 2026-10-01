@@ -997,6 +997,16 @@ class AppL10n {
       if (withText) 'والنص اتحط في خانة المحاضرة',
     ].join(' · ');
   }
+  String get installApp => _('ثبّت', 'Install');
+  String get installPitch => _(
+        'ثبّت التطبيق على الشاشة الرئيسية: بيفتح أسرع، بيشتغل من غير نت، ويظهر لما تشارك ملف من أي تطبيق.',
+        'Install the app: it opens faster, works offline, and appears when you share a file from any app.',
+      );
+  String get installIosSteps => _(
+        'عشان تثبّته: دوس زرار المشاركة تحت في سفاري، وبعدين "إضافة إلى الشاشة الرئيسية".',
+        'To install: tap Safari\'s Share button, then "Add to Home Screen".',
+      );
+  String get notNow => _('مش دلوقتي', 'Not now');
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');
