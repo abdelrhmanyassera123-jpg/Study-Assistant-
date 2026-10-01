@@ -6,13 +6,30 @@ import 'repository.dart';
 
 final supabaseProvider = Provider<SupabaseClient>((ref) => Supabase.instance.client);
 
-final repositoryProvider = Provider<Repository>((ref) => Repository(ref.watch(supabaseProvider)));
+/// كل بيانات المستخدم بتتبني على المستودع ده، وهو بيتبني من جديد لما الحساب
+/// يتغيّر — فبيانات حساب ما بتفضلش في الذاكرة لما حساب تاني يدخل على نفس
+/// الجهاز من غير ما الصفحة تتحمّل من الأول.
+/// All user data hangs off this repository, and it is rebuilt when the
+/// account changes — so one account's data does not linger in memory when
+/// another signs in on the same device without the page reloading.
+final repositoryProvider = Provider<Repository>((ref) {
+  ref.watch(currentUserIdProvider);
+  return Repository(ref.watch(supabaseProvider));
+});
 
 /// حالة تسجيل الدخول — الواجهة كلها بتتفرع من هنا.
 /// Auth state; the whole UI branches off this.
 final authStateProvider = StreamProvider<AuthState>(
   (ref) => ref.watch(supabaseProvider).auth.onAuthStateChange,
 );
+
+/// الـ id بس، عشان تجديد التوكن (نفس الحساب) ما يعيدش تحميل كل حاجة.
+/// The id alone, so a token refresh (same account) does not reload
+/// everything.
+final currentUserIdProvider = Provider<String?>((ref) {
+  ref.watch(authStateProvider);
+  return ref.watch(supabaseProvider).auth.currentUser?.id;
+});
 
 final currentUserProvider = Provider<User?>((ref) {
   ref.watch(authStateProvider);

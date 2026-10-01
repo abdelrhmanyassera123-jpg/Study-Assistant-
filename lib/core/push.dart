@@ -62,6 +62,18 @@ class WebPush {
   /// السيرفر، أو null لو مفيش اشتراك أصلاً.
   /// Cancels the current subscription (if any) and returns its endpoint so
   /// it can be removed server-side, or null if there was none.
+  /// الـ endpoint الحالي من غير ما يلغي الاشتراك.
+  /// The current endpoint, without cancelling the subscription.
+  static Future<String?> currentEndpoint() async {
+    try {
+      final registration = await web.window.navigator.serviceWorker.ready.toDart;
+      final sub = await registration.pushManager.getSubscription().toDart;
+      return sub?.endpoint;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<String?> unsubscribe() async {
     try {
       final registration = await web.window.navigator.serviceWorker.ready.toDart;

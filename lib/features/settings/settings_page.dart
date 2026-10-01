@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design.dart';
 import '../../core/l10n.dart';
+import '../../core/push.dart';
 import '../../core/settings.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
@@ -567,6 +568,18 @@ class _SignOutButton extends ConsumerWidget {
           ),
         );
         if (ok != true) return;
+        // اشتراك الإشعارات مربوط بالجهاز، فلازم يتشال من الحساب ده قبل الخروج —
+        // غير كده تنبيهات محاضراته بتفضل توصل للجهاز ولو حساب تاني دخل عليه.
+        // The push subscription belongs to the device, so it must be removed
+        // from this account before signing out — otherwise its lecture
+        // reminders keep reaching the device even after another account
+        // signs in on it.
+        final endpoint = await WebPush.currentEndpoint();
+        if (endpoint != null) {
+          try {
+            await ref.read(repositoryProvider).deletePushSubscription(endpoint);
+          } catch (_) {}
+        }
         await ref.read(supabaseProvider).auth.signOut();
         if (context.mounted) {
           Navigator.of(context).popUntil((r) => r.isFirst);

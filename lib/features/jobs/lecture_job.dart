@@ -250,9 +250,10 @@ class LectureJobs {
   Future<void> delete(String id) => _db.from('lecture_jobs').delete().eq('id', id);
 }
 
-final lectureJobsProvider = Provider<LectureJobs>(
-  (ref) => LectureJobs(ref.watch(supabaseProvider)),
-);
+final lectureJobsProvider = Provider<LectureJobs>((ref) {
+  ref.watch(currentUserIdProvider);
+  return LectureJobs(ref.watch(supabaseProvider));
+});
 
 final recentJobsProvider = FutureProvider<List<LectureJob>>(
   (ref) => ref.watch(lectureJobsProvider).recent(),

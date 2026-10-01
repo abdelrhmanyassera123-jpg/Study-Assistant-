@@ -265,21 +265,26 @@ class Repository {
 
   // -------------------------------------------------------- push subscriptions
   /// بيحفظ اشتراك Push بتاع الجهاز ده، مستبدلًا القديم لو نفس الـ endpoint
-  /// موجود بالفعل (المتصفح بيرجّع نفس الاشتراك لو اتسأل تاني).
+  /// موجود بالفعل (المتصفح بيرجّع نفس الاشتراك لو اتسأل تاني) — حتى لو كان
+  /// مسجّل باسم حساب تاني.
   /// Saves this device's push subscription, replacing an earlier one for the
   /// same endpoint if it already exists (the browser returns the same
-  /// subscription when asked again).
+  /// subscription when asked again) — even one registered to another account.
   Future<void> savePushSubscription({
     required String endpoint,
     required String p256dh,
     required String auth,
   }) =>
-      _db.from('push_subscriptions').upsert({
-        'user_id': _uid,
-        'endpoint': endpoint,
-        'p256dh': p256dh,
-        'auth': auth,
-      }, onConflict: 'endpoint');
+      // RPC مش upsert: لو الجهاز كان مسجّل باسم حساب تاني، الاشتراك بينتقل
+      // للحساب ده (شوف migration 20261002000000).
+      // An RPC rather than an upsert: if the device was registered to another
+      // account, the subscription moves to this one (see migration
+      // 20261002000000).
+      _db.rpc('claim_push_subscription', params: {
+        'p_endpoint': endpoint,
+        'p_p256dh': p256dh,
+        'p_auth': auth,
+      });
 
   Future<void> deletePushSubscription(String endpoint) => _db
       .from('push_subscriptions')
