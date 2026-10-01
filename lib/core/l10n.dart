@@ -864,6 +864,10 @@ class AppL10n {
         'Photos are analysed but never stored; only the analysis is saved.',
       );
   String get exportPng => _('صورة PNG', 'PNG image');
+  String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
+  String get formatPortrait => _('A4 بالطول', 'A4 portrait');
+  String get formatFlowing => _('صفحة طويلة', 'One long page');
+  String get findingImages => _('بيدوّر على صور توضيحية...', 'Finding illustrations...');
   String get exportPdf => _('ملف PDF', 'PDF file');
   String exportDownloaded(String fileName) => _(
         'اتحفظ الملف ($fileName) — شوف مجلد التنزيلات.',

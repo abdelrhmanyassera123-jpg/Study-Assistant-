@@ -149,7 +149,7 @@ class StyleProfile {
 
 /// نوع البلوك في الصفحة المرسومة.
 /// The kind of block on the rendered page.
-enum BlockType { heading, box, bullets, numbered, highlight, note, divider }
+enum BlockType { heading, box, bullets, numbered, highlight, note, divider, image }
 
 /// وحدة واحدة من التلخيص المرسوم.
 /// One unit of the rendered summary.
@@ -161,12 +161,25 @@ class SummaryBlock {
     this.text = '',
     this.items = const [],
     this.colorIndex = 0,
+    this.query = '',
+    this.imageUrl,
+    this.numberFrom = 1,
   });
 
   final BlockType type;
   final String title;
   final String text;
   final List<String> items;
+
+  /// للصورة: كلمة بحث إنجليزي بيكتبها الموديل، والرابط بيتجاب بعدين.
+  /// For an image: an English search term from the model; the URL is looked
+  /// up afterwards.
+  final String query;
+  final String? imageUrl;
+
+  /// القايمة المرقمة لما تتقسم على عمودين بتكمّل العد مش تبدأه من الأول.
+  /// A numbered list split across columns continues its count.
+  final int numberFrom;
 
   /// مؤشر على ألوان البروفايل بدل لون ثابت — عشان الصفحة تفضل بألوان المستخدم.
   /// Indexes into the profile's colours instead of hard-coding one, so the page
@@ -187,8 +200,21 @@ class SummaryBlock {
           .where((e) => e.trim().isNotEmpty)
           .toList(),
       colorIndex: (m['color_index'] as num?)?.toInt() ?? 0,
+      query: (m['query'] as String?)?.trim() ?? '',
     );
   }
+
+  SummaryBlock copyWith({String? imageUrl, List<String>? items, int? numberFrom}) =>
+      SummaryBlock(
+        type: type,
+        title: title,
+        text: text,
+        items: items ?? this.items,
+        colorIndex: colorIndex,
+        query: query,
+        imageUrl: imageUrl ?? this.imageUrl,
+        numberFrom: numberFrom ?? this.numberFrom,
+      );
 
   /// النص الخام للبلوك — بيستخدم لما نحفظ التلخيص كملاحظة.
   /// The block as plain text, used when saving the summary as a note.
@@ -197,11 +223,12 @@ class SummaryBlock {
         BlockType.box => '**$title**\n$text',
         BlockType.bullets => items.map((i) => '- $i').join('\n'),
         BlockType.numbered => [
-            for (var i = 0; i < items.length; i++) '${i + 1}. ${items[i]}',
+            for (var i = 0; i < items.length; i++) '${i + numberFrom}. ${items[i]}',
           ].join('\n'),
         BlockType.highlight => '**$text**',
         BlockType.note => text,
         BlockType.divider => '---',
+        BlockType.image => text.isEmpty ? '' : '[$text]',
       };
 }
 
@@ -223,7 +250,12 @@ class SummaryPage {
       );
 
   String toPlainText() =>
-      ['# $title', for (final b in blocks) b.toPlainText()].join('\n\n');
+      ['# $title', for (final b in blocks) b.toPlainText()]
+          .where((t) => t.isNotEmpty)
+          .join('\n\n');
+
+  SummaryPage withBlocks(List<SummaryBlock> blocks) =>
+      SummaryPage(title: title, blocks: blocks);
 }
 
 /// صفحة واحدة اتقروت من كراسة المستخدم.
@@ -355,7 +387,8 @@ ${profile.asInstructions()}
     {"type": "numbered",  "items": ["...", "..."]},
     {"type": "highlight", "text": "..."},
     {"type": "note",      "text": "..."},
-    {"type": "divider"}
+    {"type": "divider"},
+    {"type": "image",     "query": "Mitochondrion", "text": "وصف قصير للصورة بالعربي"}
   ]
 }
 
@@ -363,6 +396,10 @@ ${profile.asInstructions()}
 - رتّب البلوكات بنفس ترتيب أقسام الطالب.
 - استخدم "box" للتعريفات والقواعد لو الطالب بيحط مربعات.
 - استخدم "highlight" للي بيتنسى أو اللي بيتكرر في الامتحان.
+- حط من 2 لـ 4 بلوكات "image" جنب الأفكار اللي الصورة بتفهّمها فعلاً: رسم
+  تشريحي، شكل جهاز، مخطط عملية، خريطة، منحنى مشهور. "query" اسم الموضوع
+  بالإنجليزي زي عنوان مقالة ويكيبيديا (كلمة أو اتنين، مش جملة). "text" سطر
+  واحد بالعربي بيقول الصورة بتوضّح إيه. متحطش صورة لفكرة مجردة مالهاش شكل.
 - color_index رقم من 0 لعدد ألوان الطالب ناقص واحد.
 - المحتوى كله من المحاضرة المعطاة. متخترعش معلومة ولا مثال.
 - اكتب بالعربي وبنفس نبرة الطالب.

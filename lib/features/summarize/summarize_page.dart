@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/design.dart';
 import '../../core/l10n.dart';
@@ -13,7 +14,6 @@ import '../../core/share_target.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
-import '../../widgets/study_text.dart';
 import '../study_ai/study_tools_row.dart';
 import 'audio_clip.dart';
 import 'audio_input.dart';
@@ -24,6 +24,7 @@ import 'model_settings_sheet.dart';
 import 'model_usage.dart';
 import 'style_profile.dart';
 import 'style_samples_page.dart';
+import 'summary_images.dart';
 import 'summary_page_view.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
@@ -37,7 +38,6 @@ class SummarizePage extends ConsumerStatefulWidget {
 
 class _SummarizePageState extends ConsumerState<SummarizePage> {
   final _lecture = TextEditingController();
-  final _outputScroll = ScrollController();
 
   ExtractedDocument? _extracted;
 
@@ -66,14 +66,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
   SummaryPage? _page;
 
-  /// مرجع للصفحة المرسومة عشان نصوّرها وقت التصدير.
-  /// Handle on the drawn page so it can be captured for export.
-  final _exportKey = GlobalKey();
   String? _subjectId;
-  String _output = '';
   bool _running = false;
   SummarizerException? _error;
-  StreamSubscription<String>? _sub;
+
+  /// بيزيد مع كل تلخيص أو إيقاف، عشان رد قديم وصل متأخر ما يتعرضش.
+  /// Bumped on every run or stop, so a stale reply arriving late is ignored.
+  int _runId = 0;
 
   @override
   void initState() {
@@ -93,11 +92,9 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
   @override
   void dispose() {
-    _sub?.cancel();
     _tick?.cancel();
     _recorder?.dispose();
     _lecture.dispose();
-    _outputScroll.dispose();
     super.dispose();
   }
 
@@ -184,6 +181,12 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     try {
       final files = await pickLocalFiles(
         extensions: [...supportedDocumentExtensions, ...supportedAudioExtensions],
+        // على أندرويد الفلتر بالامتداد لوحده بيخفي ملفات الـ m4a من الاختيار
+        // لأن النظام بيترجمه لنوع مختلف عن اللي مسجّل بيه الملف.
+        // On Android, filtering by extension alone hides m4a files from the
+        // picker: the system maps it to a type other than the one the file
+        // was saved with.
+        mimeTypes: const ['audio/*'],
       );
       if (files.isEmpty || !mounted) return;
 
@@ -226,11 +229,15 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     // An uploaded file is one part: splitting it would mean decoding and
     // re-encoding it here. Recording in the app splits as it goes, so its
     // length is not capped the same way.
+    // النوع من الامتداد مش من المتصفح: كروم بيقول على الـ m4a إنه
+    // `audio/x-m4a`، وجوجل بترفض النوع ده رغم إنها بتقبل نفس الملف كـ
+    // `audio/mp4`.
+    // The type comes from the extension, not the browser: Chrome calls an m4a
+    // `audio/x-m4a`, which Google rejects even though it accepts the very
+    // same file as `audio/mp4`.
     final clip = AudioClip(
       name: file.name,
-      mimeType: file.mimeType.startsWith('audio/')
-          ? file.mimeType
-          : audioMimeFor(file.name),
+      mimeType: audioMimeFor(file.name),
       parts: [file.bytes],
       duration: Duration.zero,
     );
@@ -390,8 +397,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   }
 
   void _stop() {
-    _sub?.cancel();
-    _sub = null;
+    _runId++;
     setState(() {
       _running = false;
       _phase = null;
@@ -409,14 +415,17 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     final samples = pickStyleSamples(allSamples, _subjectId);
     final summarizer = ref.read(activeSummarizerProvider);
 
-    // لو شكل صفحتك متحلل، بنطلب تلخيص منظم نقدر نرسمه ونصدّره صورة.
-    // With a saved layout we ask for structured blocks we can draw and export.
+    // التلخيص دايمًا بلوكات مرسومة: النص المتدفق ما ينفعش يبقى فيه صور ولا
+    // يتقسم صفحات. لو مفيش شكل متحلل من كراستك، بيترسم بالشكل الافتراضي.
+    // The summary is always drawable blocks: streamed prose can hold neither
+    // pictures nor pages. Without a layout read from the notebook, the
+    // default look is used.
     final profiles = ref.read(styleProfilesProvider).value ?? const {};
     final rawProfile = profiles[_subjectId] ?? profiles[null];
+    final run = ++_runId;
 
     setState(() {
       _running = true;
-      _output = '';
       _page = null;
       _error = null;
       _phase = null;
@@ -458,70 +467,34 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       _progress = null;
     });
 
-    if (rawProfile != null) {
-      try {
-        final page = await summarizer.summarizeAsPage(
-          lectureText: text,
-          files: _docs,
-          samples: samples,
-          profile: StyleProfile.fromJson(rawProfile),
-        );
-        if (mounted) {
-          setState(() {
-            _page = page;
-            _running = false;
-            _phase = null;
-          });
-        }
-      } on SummarizerException catch (e) {
-        if (mounted) {
-          setState(() {
-            _running = false;
-            _error = e;
-          });
-        }
-      }
-      return;
-    }
-
     try {
-      final stream = summarizer.summarize(
+      var page = await summarizer.summarizeAsPage(
         lectureText: text,
         files: _docs,
         samples: samples,
+        profile: rawProfile == null
+            ? const StyleProfile()
+            : StyleProfile.fromJson(rawProfile),
       );
-      _sub = stream.listen(
-        (chunk) {
-          if (!mounted) return;
-          setState(() => _output += chunk);
-          // نخلي آخر سطر ظاهر وهو بيتكتب.
-          // Keep the newest line in view while it streams.
-          if (_outputScroll.hasClients) {
-            _outputScroll.jumpTo(_outputScroll.position.maxScrollExtent);
-          }
-        },
-        onError: (Object e) {
-          if (!mounted) return;
-          setState(() {
-            _running = false;
-            _error = e is SummarizerException ? e : SummarizerException('$e');
-          });
-        },
-        onDone: () {
-          if (mounted) {
-            setState(() {
-              _running = false;
-              _phase = null;
-            });
-          }
-        },
-        cancelOnError: true,
-      );
-    } on SummarizerException catch (e) {
+      if (!mounted || run != _runId) return;
+      if (page.blocks.any((b) => b.type == BlockType.image)) {
+        setState(() => _phase = context.l.findingImages);
+        page = await attachImages(page);
+        if (!mounted || run != _runId) return;
+      }
       setState(() {
+        _page = page;
         _running = false;
-        _error = e;
+        _phase = null;
       });
+    } on SummarizerException catch (e) {
+      if (mounted && run == _runId) {
+        setState(() {
+          _running = false;
+          _phase = null;
+          _error = e;
+        });
+      }
     }
   }
 
@@ -531,13 +504,14 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         (_docs.isNotEmpty ? _docs.first.name : null) ??
         (_clips.isNotEmpty ? _clips.first.name : null);
     final title = source?.replaceAll(RegExp(r'\.[^.]+$'), '') ??
-        _output.split('\n').first.replaceAll(RegExp(r'[#*]'), '').trim();
+        _page?.title.trim() ??
+        '';
 
     try {
       await ref.read(repositoryProvider).addNote(Note(
             id: '',
             title: title.isEmpty ? l.theSummary : title,
-            body: readableMath(_page?.toPlainText() ?? _output.trim()),
+            body: readableMath(_page?.toPlainText() ?? ''),
             subjectId: _subjectId,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
@@ -566,7 +540,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         appSettings.autoModel || appSettings.geminiModel.isNotEmpty;
 
     final hasInput = _hasInput;
-    final hasResult = _page != null || _output.trim().isNotEmpty;
+    final hasResult = _page != null;
     final profiles = ref.watch(styleProfilesProvider).value ?? const {};
     final hasLayout = (profiles[_subjectId] ?? profiles[null]) != null;
 
@@ -808,83 +782,11 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       profile: StyleProfile.fromJson(
                         (profiles[_subjectId] ?? profiles[null]) ?? const {},
                       ),
-                      exportKey: _exportKey,
+                      subjectId: _subjectId,
                       onSaveNote: _saveAsNote,
                     ),
                   ],
 
-                  // التلخيص النصي لما ما يكونش في تخطيط محفوظ.
-                  // The plain summary when no layout has been saved.
-                  if (_output.isNotEmpty || (_running && _page == null)) ...[
-                    const SizedBox(height: Insets.xl),
-                    if (_running)
-                      Row(
-                        children: [
-                          const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: Insets.md),
-                          Text(
-                            l.generating,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    if (_output.isNotEmpty) ...[
-                      const SizedBox(height: Insets.md),
-                      Container(
-                        padding: const EdgeInsets.all(Insets.lg),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow,
-                          borderRadius: Radii.all(Radii.md),
-                        ),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 440),
-                          child: SingleChildScrollView(
-                            controller: _outputScroll,
-                            child: StudyText(_output),
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (!_running && _output.trim().isNotEmpty) ...[
-                      const SizedBox(height: Insets.lg),
-                      StudyToolsRow(
-                        title: l.theSummary,
-                        source: _output,
-                        subjectId: _subjectId,
-                      ),
-                      const SizedBox(height: Insets.lg),
-                      Wrap(
-                        spacing: Insets.md,
-                        runSpacing: Insets.md,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _saveAsNote,
-                            icon: const Icon(Icons.save_alt_rounded, size: 19),
-                            label: Text(l.saveAsNote),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(
-                                  text: readableMath(_output.trim()),
-                                ),
-                              );
-                              if (context.mounted) showSnack(context, l.copied);
-                            },
-                            icon: const Icon(Icons.copy_rounded, size: 19),
-                            label: Text(l.copyText),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
                 ],
               ),
             ),
@@ -1281,13 +1183,13 @@ class _StyledResult extends StatefulWidget {
   const _StyledResult({
     required this.page,
     required this.profile,
-    required this.exportKey,
+    required this.subjectId,
     required this.onSaveNote,
   });
 
   final SummaryPage page;
   final StyleProfile profile;
-  final GlobalKey exportKey;
+  final String? subjectId;
   final Future<void> Function() onSaveNote;
 
   @override
@@ -1295,7 +1197,34 @@ class _StyledResult extends StatefulWidget {
 }
 
 class _StyledResultState extends State<_StyledResult> {
+  static const _kFormat = 'summary_page_format';
+
   bool _exporting = false;
+  PageFormat _format = PageFormat.a4Landscape;
+
+  /// الحدود اللي هتتصور: واحدة للصفحة المتصلة، أو واحدة لكل صفحة A4.
+  /// The boundaries to capture: one for the flowing page, or one per A4 page.
+  final _flowKey = GlobalKey();
+  List<GlobalKey> _pageKeys = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((p) {
+      final saved = PageFormat.values.where((f) => f.name == p.getString(_kFormat));
+      if (mounted && saved.isNotEmpty) setState(() => _format = saved.first);
+    });
+  }
+
+  void _setFormat(PageFormat format) {
+    setState(() {
+      _format = format;
+      _pageKeys = const [];
+    });
+    SharedPreferences.getInstance().then((p) => p.setString(_kFormat, format.name));
+  }
+
+  List<GlobalKey> get _keys => _format == PageFormat.flowing ? [_flowKey] : _pageKeys;
 
   String get _fileName {
     final base = widget.page.title.trim().isEmpty ? 'summary' : widget.page.title.trim();
@@ -1305,6 +1234,8 @@ class _StyledResultState extends State<_StyledResult> {
   }
 
   Future<void> _export({required bool asPdf}) async {
+    final keys = _keys;
+    if (keys.isEmpty) return;
     setState(() => _exporting = true);
     try {
       // Blob + <a download> بيبدأ التنزيل بصمت — من غير رسالة هنا المستخدم
@@ -1312,11 +1243,19 @@ class _StyledResultState extends State<_StyledResult> {
       // A Blob + <a download> starts the download silently — without a
       // message here the user presses the button, sees no visible reaction,
       // and assumes it is broken.
-      final name = asPdf ? '$_fileName.pdf' : '$_fileName.png';
+      String name;
       if (asPdf) {
-        downloadBytes(name, 'application/pdf', await capturePdf(widget.exportKey));
+        name = '$_fileName.pdf';
+        downloadBytes(name, 'application/pdf', await capturePdf(keys));
       } else {
-        downloadBytes(name, 'image/png', await capturePng(widget.exportKey));
+        // صورة لكل صفحة: لزقهم في صورة واحدة طويلة كان هيضيّع فكرة الصفحات.
+        // One image per page: stitching them into one tall image would undo
+        // the point of having pages.
+        for (var i = 0; i < keys.length; i++) {
+          final suffix = keys.length == 1 ? '' : ' (${i + 1})';
+          downloadBytes('$_fileName$suffix.png', 'image/png', await capturePng(keys[i]));
+        }
+        name = keys.length == 1 ? '$_fileName.png' : '$_fileName (1-${keys.length}).png';
       }
       if (mounted) showSnack(context, context.l.exportDownloaded(name));
     } catch (e) {
@@ -1333,6 +1272,29 @@ class _StyledResultState extends State<_StyledResult> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        SegmentedButton<PageFormat>(
+          showSelectedIcon: false,
+          segments: [
+            ButtonSegment(
+              value: PageFormat.a4Landscape,
+              icon: const Icon(Icons.crop_landscape_rounded, size: 18),
+              label: Text(l.formatLandscape),
+            ),
+            ButtonSegment(
+              value: PageFormat.a4Portrait,
+              icon: const Icon(Icons.crop_portrait_rounded, size: 18),
+              label: Text(l.formatPortrait),
+            ),
+            ButtonSegment(
+              value: PageFormat.flowing,
+              icon: const Icon(Icons.view_day_outlined, size: 18),
+              label: Text(l.formatFlowing),
+            ),
+          ],
+          selected: {_format},
+          onSelectionChanged: (s) => _setFormat(s.first),
+        ),
+        const SizedBox(height: Insets.lg),
         // الحدود دي هي اللي بتتصور وقت التصدير، فبتتلف الصفحة نفسها بس.
         // This boundary is what gets captured, so it wraps the page alone.
         //
@@ -1345,10 +1307,19 @@ class _StyledResultState extends State<_StyledResult> {
           data: MediaQuery.of(context).copyWith(
             textScaler: TextScaler.noScaling,
           ),
-          child: RepaintBoundary(
-            key: widget.exportKey,
-            child: SummaryPageView(page: widget.page, profile: widget.profile),
-          ),
+          child: _format == PageFormat.flowing
+              ? RepaintBoundary(
+                  key: _flowKey,
+                  child: SummaryPageView(page: widget.page, profile: widget.profile),
+                )
+              : PagedSummary(
+                  page: widget.page,
+                  profile: widget.profile,
+                  format: _format,
+                  // من غير setState: المفاتيح بتتقرا وقت الضغط بس.
+                  // No setState: the keys are only read when a button is pressed.
+                  onPages: (keys) => _pageKeys = keys,
+                ),
         ),
         const SizedBox(height: Insets.lg),
         // تلات أزرار في صف واحد بيتزنقوا على الموبايل، فبيبقوا فوق بعض.
@@ -1357,23 +1328,33 @@ class _StyledResultState extends State<_StyledResult> {
           builder: (context, constraints) {
             final buttons = [
               FilledButton.icon(
-                onPressed: _exporting ? null : () => _export(asPdf: false),
-                icon: const Icon(Icons.image_outlined, size: 19),
-                label: Text(l.exportPng),
-              ),
-              OutlinedButton.icon(
                 onPressed: _exporting ? null : () => _export(asPdf: true),
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 19),
                 label: Text(l.exportPdf),
+              ),
+              OutlinedButton.icon(
+                onPressed: _exporting ? null : () => _export(asPdf: false),
+                icon: const Icon(Icons.image_outlined, size: 19),
+                label: Text(l.exportPng),
               ),
               OutlinedButton.icon(
                 onPressed: _exporting ? null : widget.onSaveNote,
                 icon: const Icon(Icons.save_alt_rounded, size: 19),
                 label: Text(l.saveAsNote),
               ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: readableMath(widget.page.toPlainText())),
+                  );
+                  if (context.mounted) showSnack(context, l.copied);
+                },
+                icon: const Icon(Icons.copy_rounded, size: 19),
+                label: Text(l.copyText),
+              ),
             ];
 
-            if (constraints.maxWidth < 460) {
+            if (constraints.maxWidth < 560) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1395,6 +1376,12 @@ class _StyledResultState extends State<_StyledResult> {
               ],
             );
           },
+        ),
+        const SizedBox(height: Insets.lg),
+        StudyToolsRow(
+          title: l.theSummary,
+          source: widget.page.toPlainText(),
+          subjectId: widget.subjectId,
         ),
       ],
     );

@@ -50,13 +50,14 @@ Future<PickedFile?> pickLocalFile({required List<String> extensions}) async {
 /// Opens the file dialog and returns the contents of whatever was chosen.
 Future<List<PickedFile>> pickLocalFiles({
   required List<String> extensions,
+  List<String> mimeTypes = const [],
   bool multiple = true,
 }) {
   final completer = Completer<List<PickedFile>>();
 
   final input = web.HTMLInputElement()
     ..type = 'file'
-    ..accept = extensions.map((e) => '.$e').join(',')
+    ..accept = [...extensions.map((e) => '.$e'), ...mimeTypes].join(',')
     ..multiple = multiple
     ..style.display = 'none';
 
