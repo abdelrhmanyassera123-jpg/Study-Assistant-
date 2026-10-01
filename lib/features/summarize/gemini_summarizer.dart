@@ -649,6 +649,59 @@ class GeminiSummarizer implements Summarizer {
   }
 
   @override
+  Future<List<SummaryBlock>> reworkBlock({
+    required SummaryPage page,
+    required SummaryBlock block,
+    required String instruction,
+    required StyleProfile profile,
+    String source = '',
+  }) async {
+    _requireSignIn();
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': ReworkPrompts.blockSystem(profile),
+      'prompt': ReworkPrompts.blockPrompt(
+        pageText: page.toPlainText(),
+        blockJson: jsonEncode(block.toJson()),
+        instruction: instruction,
+        source: source.isEmpty ? '' : _capped(source),
+      ),
+    });
+    final rows = decodeModelJson(result)?['blocks'];
+    final blocks = rows is List
+        ? rows
+            .whereType<Map>()
+            .map((m) => SummaryBlock.fromJson(m.map((k, v) => MapEntry('$k', v))))
+            .toList()
+        : const <SummaryBlock>[];
+    if (blocks.isEmpty) {
+      throw const SummarizerException('التعديل رجع فاضي — جرّب تاني.');
+    }
+    return blocks;
+  }
+
+  @override
+  Future<List<String>> findMissed({
+    required String source,
+    required String summary,
+  }) async {
+    _requireSignIn();
+    _requireText(source);
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': ReworkPrompts.missedSystem,
+      'prompt': ReworkPrompts.missedPrompt(_capped(source), summary),
+    });
+    final rows = decodeModelJson(result)?['missed'];
+    if (rows is! List) {
+      throw const SummarizerException('المراجعة رجعت بشكل مش مفهوم.');
+    }
+    return rows.map((e) => '$e'.trim()).where((e) => e.isNotEmpty).toList();
+  }
+
+  @override
   Future<List<GeneratedCard>> makeCards(String source, {int count = 8}) async {
     _requireSignIn();
     _requireText(source);

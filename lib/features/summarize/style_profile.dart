@@ -216,6 +216,15 @@ class SummaryBlock {
         numberFrom: numberFrom ?? this.numberFrom,
       );
 
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        if (title.isNotEmpty) 'title': title,
+        if (text.isNotEmpty) 'text': text,
+        if (items.isNotEmpty) 'items': items,
+        if (query.isNotEmpty) 'query': query,
+        'color_index': colorIndex,
+      };
+
   /// النص الخام للبلوك — بيستخدم لما نحفظ التلخيص كملاحظة.
   /// The block as plain text, used when saving the summary as a note.
   String toPlainText() => switch (type) {
@@ -409,6 +418,73 @@ ${profile.asInstructions()}
   كسر أو أس أو جذر أو سهم تفاعل يتكتب جوه \$ مش بالكيبورد العادي.
 - رد بالـ JSON بس، من غير أي كلام قبله أو بعده.
 ''';
+}
+
+/// برومبتات تعديل التلخيص بعد ما يطلع.
+/// Prompts for changing a summary after it is made.
+class ReworkPrompts {
+  const ReworkPrompts._();
+
+  static String blockSystem(StyleProfile profile) => '''
+أنت بتعدّل جزء واحد من تلخيص مذاكرة مرسوم كبلوكات، بنفس أسلوب الطالب وشكله.
+
+${profile.asInstructions()}
+
+هتوصلك الصفحة كلها للسياق، والبلوك المطلوب تعديله، والتعديل المطلوب.
+رد بـ JSON بالشكل ده: {"blocks":[ ... ]} — البلوكات اللي هتحل محل البلوك ده بس،
+بنفس أنواع البلوكات المسموحة (heading, box, bullets, numbered, highlight, note,
+divider, image). ممكن ترجّع أكتر من بلوك لو التعديل محتاج (مثلاً شرح + مثال).
+
+- بلوك "image" فيه "query" (اسم الموضوع بالإنجليزي زي عنوان مقالة ويكيبيديا)
+  و"text" (سطر عربي بيقول الصورة بتوضّح إيه).
+- المعادلات LaTeX بين \$...\$ أو \$\$...\$\$.
+- لو فيه مصدر للمحاضرة، المعلومات تيجي منه. لو مفيش، التزم باللي في الصفحة
+  ومتخترعش أرقام ولا تفاصيل.
+- اكتب بنفس نبرة الطالب ولهجته.
+- رد بالـ JSON بس.
+''';
+
+  static String blockPrompt({
+    required String pageText,
+    required String blockJson,
+    required String instruction,
+    String source = '',
+  }) {
+    final b = StringBuffer()
+      ..writeln('### الصفحة كلها:')
+      ..writeln(pageText)
+      ..writeln()
+      ..writeln('### البلوك المطلوب تعديله (JSON):')
+      ..writeln(blockJson)
+      ..writeln()
+      ..writeln('### التعديل المطلوب:')
+      ..writeln(instruction);
+    if (source.trim().isNotEmpty) {
+      b
+        ..writeln()
+        ..writeln('### مصدر المحاضرة:')
+        ..writeln(source.trim());
+    }
+    return b.toString();
+  }
+
+  static const missedSystem = '''
+أنت مراجع لتلخيص مذاكرة. هيوصلك نص المحاضرة الأصلي (تفريغ أو سلايدات) والتلخيص.
+طلّع النقط **المهمة للامتحان** اللي اتقالت في المحاضرة ومش موجودة في التلخيص:
+تعريف، رقم، قاعدة، استثناء، مثال الدكتور ركّز عليه، "دي بتيجي في الامتحان".
+
+- كل نقطة جملة واحدة كاملة مفهومة لوحدها، بالعربي وبنبرة التلخيص.
+- متكررش حاجة موجودة في التلخيص حتى لو بصياغة تانية.
+- متجيبش كلام جانبي (هزار، تنظيم، مواعيد) إلا لو ميعاد امتحان أو تسليم.
+- لو التلخيص مغطي كل حاجة مهمة، رجّع قايمة فاضية.
+- المعادلات LaTeX بين \$...\$.
+
+رد بـ JSON: {"missed":["...", "..."]}
+''';
+
+  static String missedPrompt(String source, String summary) =>
+      '### المحاضرة الأصلية:\n$source\n\n### التلخيص:\n$summary\n\n'
+      'إيه النقط المهمة اللي اتقالت ومادخلتش التلخيص؟';
 }
 
 /// بيفك JSON جاي من الموديل بشكل متسامح.

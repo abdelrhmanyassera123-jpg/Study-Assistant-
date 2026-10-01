@@ -17,10 +17,15 @@ class SummaryPageView extends StatelessWidget {
     required this.page,
     required this.profile,
     this.forExport = false,
+    this.onTapBlock,
   });
 
   final SummaryPage page;
   final StyleProfile profile;
+
+  /// ضغطة على بلوك بتفتح تعديله. null = الصفحة للعرض بس.
+  /// A tap on a block opens its edit; null means the page is display-only.
+  final ValueChanged<SummaryBlock>? onTapBlock;
 
   /// النسخة المصدّرة بتتقاس بعرض ثابت؛ المعاينة بتاخد عرض الشاشة.
   /// The exported copy uses a fixed width; the preview takes the screen's.
@@ -67,7 +72,7 @@ class SummaryPageView extends StatelessWidget {
               SizedBox(height: _gap),
             ],
             for (final block in page.blocks) ...[
-              SummaryBlockView(block: block, profile: profile),
+              _tappable(block, SummaryBlockView(block: block, profile: profile), onTapBlock),
               SizedBox(height: _gap),
             ],
           ],
@@ -76,6 +81,22 @@ class SummaryPageView extends StatelessWidget {
     );
   }
 }
+
+Widget _tappable(
+  SummaryBlock block,
+  Widget child,
+  ValueChanged<SummaryBlock>? onTap,
+) =>
+    onTap == null
+        ? child
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onTap(block),
+              child: child,
+            ),
+          );
 
 double blockGap(StyleProfile profile) => switch (profile.density) {
       'compact' => 10,
@@ -323,11 +344,13 @@ class PagedSummary extends StatefulWidget {
     required this.profile,
     required this.format,
     required this.onPages,
+    this.onTapBlock,
   });
 
   final SummaryPage page;
   final StyleProfile profile;
   final PageFormat format;
+  final ValueChanged<SummaryBlock>? onTapBlock;
 
   /// مفتاح لكل صفحة، عشان التصدير يصوّرهم واحدة واحدة.
   /// One key per page, so export can capture them one by one.
@@ -343,6 +366,10 @@ class _PagedSummaryState extends State<PagedSummary> {
   static const _footer = 22.0;
 
   late List<SummaryBlock> _units;
+
+  /// البلوك الأصلي لكل جزء — القايمة المقسومة بتتعدل كلها مش جزء منها.
+  /// The original block behind each piece: a split list is edited whole.
+  final _origin = <SummaryBlock, SummaryBlock>{};
   List<GlobalKey> _measureKeys = [];
   final _titleKey = GlobalKey();
 
@@ -375,7 +402,8 @@ class _PagedSummaryState extends State<PagedSummary> {
   }
 
   void _prepare() {
-    _units = _splitLists(widget.page.blocks);
+    _origin.clear();
+    _units = _splitLists(widget.page.blocks, _origin);
     _measureKeys = [for (final _ in _units) GlobalKey()];
     _pages = null;
     WidgetsBinding.instance.addPostFrameCallback((_) => _paginate());
@@ -385,18 +413,24 @@ class _PagedSummaryState extends State<PagedSummary> {
   /// بدل ما تتصغّر كلها في عمود واحد.
   /// Long lists are cut into small pieces so they can continue in the next
   /// column instead of being shrunk to fit one.
-  static List<SummaryBlock> _splitLists(List<SummaryBlock> blocks) {
+  static List<SummaryBlock> _splitLists(
+    List<SummaryBlock> blocks,
+    Map<SummaryBlock, SummaryBlock> origin,
+  ) {
     const size = 4;
     final out = <SummaryBlock>[];
     for (final b in blocks) {
       final isList = b.type == BlockType.bullets || b.type == BlockType.numbered;
       if (!isList || b.items.length <= size) {
         out.add(b);
+        origin[b] = b;
         continue;
       }
       for (var i = 0; i < b.items.length; i += size) {
         final end = (i + size).clamp(0, b.items.length);
-        out.add(b.copyWith(items: b.items.sublist(i, end), numberFrom: i + 1));
+        final piece = b.copyWith(items: b.items.sublist(i, end), numberFrom: i + 1);
+        out.add(piece);
+        origin[piece] = b;
       }
     }
     return out;
@@ -563,7 +597,11 @@ class _PagedSummaryState extends State<PagedSummary> {
                           ? 0
                           : gap,
                     ),
-                  SummaryBlockView(block: blocks[i], profile: widget.profile),
+                  _tappable(
+                    _origin[blocks[i]] ?? blocks[i],
+                    SummaryBlockView(block: blocks[i], profile: widget.profile),
+                    widget.onTapBlock,
+                  ),
                 ],
               ],
             ),

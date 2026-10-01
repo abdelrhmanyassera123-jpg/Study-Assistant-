@@ -821,6 +821,44 @@ Future<bool> confirmDelete(BuildContext context, {String? extra}) async {
   return ok ?? false;
 }
 
+/// نافذة "استنى" بتمنع اللمس لحد ما الشغل يخلص. [BusyHandle.close] بتقفلها.
+/// A "please wait" dialog that blocks input until the work is done;
+/// [BusyHandle.close] dismisses it.
+BusyHandle showBusy(BuildContext context, String message) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  var open = true;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(width: Insets.lg),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    ),
+  ).whenComplete(() => open = false);
+  return BusyHandle(() {
+    if (!open) return;
+    open = false;
+    navigator.pop();
+  });
+}
+
+class BusyHandle {
+  BusyHandle(this.close);
+  final VoidCallback close;
+}
+
 void showSnack(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()

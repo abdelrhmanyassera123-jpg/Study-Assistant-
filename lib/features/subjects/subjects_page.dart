@@ -7,6 +7,7 @@ import '../../core/l10n.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../study_ai/revision_page.dart';
 
 class SubjectsPage extends ConsumerWidget {
   const SubjectsPage({super.key});
@@ -75,6 +76,7 @@ class SubjectsPage extends ConsumerWidget {
                         noteCount:
                             notes.where((n) => n.subjectId == s.id).length,
                         onEdit: () => _openEditor(context, ref, s),
+                        onRevise: () => openRevisionPage(context, s),
                         onDelete: () async {
                           final ok = await confirmDelete(context,
                               extra: l.subjectDeleteWarning);
@@ -121,6 +123,7 @@ class _SubjectCard extends StatelessWidget {
     required this.noteCount,
     required this.onEdit,
     required this.onDelete,
+    required this.onRevise,
   });
 
   final Subject subject;
@@ -129,6 +132,7 @@ class _SubjectCard extends StatelessWidget {
   final int noteCount;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onRevise;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +185,12 @@ class _SubjectCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: l.examRevision,
+                      iconSize: 19,
+                      onPressed: onRevise,
+                      icon: Icon(Icons.school_outlined, color: scheme.primary),
                     ),
                     IconButton(
                       tooltip: l.delete,

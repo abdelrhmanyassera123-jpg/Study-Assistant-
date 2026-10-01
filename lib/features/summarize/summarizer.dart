@@ -423,6 +423,23 @@ abstract class Summarizer {
     required StyleProfile profile,
   });
 
+  /// بيعيد كتابة بلوك واحد حسب [instruction] (وسّع، بسّط، ...) ويرجّع
+  /// البلوكات اللي هتحل محله — ممكن تبقى أكتر من واحد.
+  /// Rewrites one block following [instruction] (expand, simplify, ...) and
+  /// returns the blocks that replace it — possibly more than one.
+  Future<List<SummaryBlock>> reworkBlock({
+    required SummaryPage page,
+    required SummaryBlock block,
+    required String instruction,
+    required StyleProfile profile,
+    String source,
+  });
+
+  /// بيقارن التلخيص بالمصدر ويرجّع النقط المهمة اللي اتقالت ومادخلتش.
+  /// Compares the summary with its source and returns the important points
+  /// that were said but left out.
+  Future<List<String>> findMissed({required String source, required String summary});
+
   /// الموديلات المتاحة — بتستخدم كمان كفحص للاتصال.
   /// Available models; doubles as the connectivity check.
   Future<List<String>> listModels();

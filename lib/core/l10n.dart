@@ -868,6 +868,51 @@ class AppL10n {
         'Photos are analysed but never stored; only the analysis is saved.',
       );
   String get exportPng => _('صورة PNG', 'PNG image');
+  String get tapBlockToEdit => _('اضغط على أي جزء في التلخيص عشان تعدّله', 'Tap any part of the summary to change it');
+  String get reworking => _('بيعدّل الجزء ده...', 'Reworking this part...');
+  String get reworkExpand => _('وسّعه واشرح أكتر', 'Expand it');
+  String get reworkSimplify => _('بسّطه واختصره', 'Simplify it');
+  String get reworkExample => _('ضيف مثال', 'Add an example');
+  String get reworkImage => _('ضيف صورة توضيحية', 'Add an illustration');
+  String get reworkPoints => _('حوّله لنقط سهلة الحفظ', 'Turn into short points');
+  String get reworkCustom => _('أو اكتب التعديل اللي عايزه', 'Or describe the change');
+  String get reworkDelete => _('امسح الجزء ده', 'Delete this part');
+  String get checkMissed => _('إيه اللي اتقال ومادخلش التلخيص؟', 'What was said but left out?');
+  String get checkingMissed => _('بيقارن التلخيص بالمحاضرة...', 'Comparing with the lecture...');
+  String get nothingMissed => _('التلخيص مغطي كل النقط المهمة.', 'The summary covers every important point.');
+  String missedTitle(int n) => isAr
+      ? (n == 1 ? 'نقطة مهمة مادخلتش التلخيص' : '$n نقط مهمة مادخلتش التلخيص')
+      : '$n important point${n == 1 ? '' : 's'} left out';
+  String get addMissed => _('ضيفهم للتلخيص', 'Add them to the summary');
+  String get missedBoxTitle => _('نقط إضافية من المحاضرة', 'More from the lecture');
+  String imageQuiz(int n) => isAr
+      ? 'اختبر نفسك على الصور ($n)'
+      : 'Quiz yourself on the pictures ($n)';
+  String get imageQuizTitle => _('اختبار الصور', 'Picture quiz');
+  String get whatIsThisPicture => _('إيه اللي في الصورة دي؟', 'What does this picture show?');
+  String get knewIt => _('عرفتها', 'Knew it');
+  String get didntKnow => _('ماعرفتهاش', "Didn't know");
+  String imageQuizScore(int known, int total) => isAr
+      ? 'عرفت $known من $total'
+      : 'You knew $known of $total';
+  String get tryAgain => _('تاني', 'Again');
+  String get saveAsCards => _('احفظهم كروت مراجعة', 'Save as review cards');
+  String get savedAsCards => _('اتحفظوا كروت', 'Saved as cards');
+  String get examRevision => _('مراجعة قبل الامتحان', 'Exam revision');
+  String get revisionPack => _('ملزمة مراجعة', 'Revision pack');
+  String get noSummariesForSubject => _('مفيش تلخيصات للمادة دي لسه', 'No summaries for this subject yet');
+  String get noSummariesForSubjectHint => _(
+        'لخّص محاضرات المادة واحفظها كملاحظات، وهنا هتتجمع في ملزمة واحدة.',
+        "Summarize this subject's lectures and save them as notes; they come together here.",
+      );
+  String revisionSources(int notes, int weak) => isAr
+      ? 'هتتعمل من $notes تلخيص محفوظ للمادة، مع تركيز على $weak كارت بتغلط فيهم.'
+      : 'Built from $notes saved summaries, focusing on $weak cards you keep missing.';
+  String get makeRevisionPack => _('اعمل ملزمة المراجعة', 'Make the revision pack');
+  String get remakeRevisionPack => _('اعملها تاني', 'Make it again');
+  String get makingRevisionPack => _('بيجمّع المادة كلها في ملزمة...', 'Gathering the subject into a pack...');
+  String get subjectMockExam => _('امتحان تجريبي على المادة كلها', 'Mock exam on the whole subject');
+  String reviewWeakCards(int n) => isAr ? 'الكروت الضعيفة ($n)' : 'Weak cards ($n)';
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

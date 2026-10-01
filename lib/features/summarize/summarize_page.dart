@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/design.dart';
 import '../../core/l10n.dart';
@@ -14,18 +13,16 @@ import '../../core/share_target.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
-import '../study_ai/study_tools_row.dart';
 import 'audio_clip.dart';
 import 'audio_input.dart';
 import 'document_text.dart';
-import 'export_page.dart';
 import 'file_input.dart';
 import 'model_settings_sheet.dart';
 import 'model_usage.dart';
 import 'style_profile.dart';
 import 'style_samples_page.dart';
 import 'summary_images.dart';
-import 'summary_page_view.dart';
+import 'styled_result.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
 
@@ -65,6 +62,11 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   double? _progress;
 
   SummaryPage? _page;
+
+  /// النص اللي اتلخص (تفريغ + نص ملزوق) — بيتحفظ عشان "إيه اللي اتنسى".
+  /// The text that was summarized (transcript + pasted text), kept for "what
+  /// was missed".
+  String _source = '';
 
   String? _subjectId;
   bool _running = false;
@@ -467,6 +469,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       _progress = null;
     });
 
+    _source = text;
     try {
       var page = await summarizer.summarizeAsPage(
         lectureText: text,
@@ -777,12 +780,14 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                   // The page drawn in the layout read from the notebook.
                   if (_page != null) ...[
                     const SizedBox(height: Insets.xl),
-                    _StyledResult(
+                    StyledResult(
                       page: _page!,
                       profile: StyleProfile.fromJson(
                         (profiles[_subjectId] ?? profiles[null]) ?? const {},
                       ),
                       subjectId: _subjectId,
+                      source: _source,
+                      onPageChanged: (page) => setState(() => _page = page),
                       onSaveNote: _saveAsNote,
                     ),
                   ],
@@ -1173,217 +1178,6 @@ class _ErrorBox extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// الصفحة المرسومة بشكل المستخدم، مع أزرار التصدير.
-/// The page drawn in the user's own layout, with its export actions.
-class _StyledResult extends StatefulWidget {
-  const _StyledResult({
-    required this.page,
-    required this.profile,
-    required this.subjectId,
-    required this.onSaveNote,
-  });
-
-  final SummaryPage page;
-  final StyleProfile profile;
-  final String? subjectId;
-  final Future<void> Function() onSaveNote;
-
-  @override
-  State<_StyledResult> createState() => _StyledResultState();
-}
-
-class _StyledResultState extends State<_StyledResult> {
-  static const _kFormat = 'summary_page_format';
-
-  bool _exporting = false;
-  PageFormat _format = PageFormat.a4Landscape;
-
-  /// الحدود اللي هتتصور: واحدة للصفحة المتصلة، أو واحدة لكل صفحة A4.
-  /// The boundaries to capture: one for the flowing page, or one per A4 page.
-  final _flowKey = GlobalKey();
-  List<GlobalKey> _pageKeys = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    SharedPreferences.getInstance().then((p) {
-      final saved = PageFormat.values.where((f) => f.name == p.getString(_kFormat));
-      if (mounted && saved.isNotEmpty) setState(() => _format = saved.first);
-    });
-  }
-
-  void _setFormat(PageFormat format) {
-    setState(() {
-      _format = format;
-      _pageKeys = const [];
-    });
-    SharedPreferences.getInstance().then((p) => p.setString(_kFormat, format.name));
-  }
-
-  List<GlobalKey> get _keys => _format == PageFormat.flowing ? [_flowKey] : _pageKeys;
-
-  String get _fileName {
-    final base = widget.page.title.trim().isEmpty ? 'summary' : widget.page.title.trim();
-    // أسماء الملفات بتتكسر مع المحارف دي على بعض الأنظمة.
-    // These characters break file names on some systems.
-    return base.replaceAll(RegExp(r'[\/:*?"<>|]'), '-');
-  }
-
-  Future<void> _export({required bool asPdf}) async {
-    final keys = _keys;
-    if (keys.isEmpty) return;
-    setState(() => _exporting = true);
-    try {
-      // Blob + <a download> بيبدأ التنزيل بصمت — من غير رسالة هنا المستخدم
-      // بيضغط ومفيش أي رد فعل ظاهر، فبيفتكر إن الزرار مش شغال.
-      // A Blob + <a download> starts the download silently — without a
-      // message here the user presses the button, sees no visible reaction,
-      // and assumes it is broken.
-      String name;
-      if (asPdf) {
-        name = '$_fileName.pdf';
-        downloadBytes(name, 'application/pdf', await capturePdf(keys));
-      } else {
-        // صورة لكل صفحة: لزقهم في صورة واحدة طويلة كان هيضيّع فكرة الصفحات.
-        // One image per page: stitching them into one tall image would undo
-        // the point of having pages.
-        for (var i = 0; i < keys.length; i++) {
-          final suffix = keys.length == 1 ? '' : ' (${i + 1})';
-          downloadBytes('$_fileName$suffix.png', 'image/png', await capturePng(keys[i]));
-        }
-        name = keys.length == 1 ? '$_fileName.png' : '$_fileName (1-${keys.length}).png';
-      }
-      if (mounted) showSnack(context, context.l.exportDownloaded(name));
-    } catch (e) {
-      if (mounted) showSnack(context, '$e');
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SegmentedButton<PageFormat>(
-          showSelectedIcon: false,
-          segments: [
-            ButtonSegment(
-              value: PageFormat.a4Landscape,
-              icon: const Icon(Icons.crop_landscape_rounded, size: 18),
-              label: Text(l.formatLandscape),
-            ),
-            ButtonSegment(
-              value: PageFormat.a4Portrait,
-              icon: const Icon(Icons.crop_portrait_rounded, size: 18),
-              label: Text(l.formatPortrait),
-            ),
-            ButtonSegment(
-              value: PageFormat.flowing,
-              icon: const Icon(Icons.view_day_outlined, size: 18),
-              label: Text(l.formatFlowing),
-            ),
-          ],
-          selected: {_format},
-          onSelectionChanged: (s) => _setFormat(s.first),
-        ),
-        const SizedBox(height: Insets.lg),
-        // الحدود دي هي اللي بتتصور وقت التصدير، فبتتلف الصفحة نفسها بس.
-        // This boundary is what gets captured, so it wraps the page alone.
-        //
-        // وتكبير الخط بتاع التطبيق متشال من هنا: الصفحة دي ملف هيتصدَّر، ولو
-        // إعداد في التطبيق غيّر مقاسها تبقى المعاينة مش هي اللي اتحفظت.
-        // The app's text scaling is dropped here: this page is a file about to
-        // be exported, and if an app setting resized it the preview would stop
-        // being what got saved.
-        MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.noScaling,
-          ),
-          child: _format == PageFormat.flowing
-              ? RepaintBoundary(
-                  key: _flowKey,
-                  child: SummaryPageView(page: widget.page, profile: widget.profile),
-                )
-              : PagedSummary(
-                  page: widget.page,
-                  profile: widget.profile,
-                  format: _format,
-                  // من غير setState: المفاتيح بتتقرا وقت الضغط بس.
-                  // No setState: the keys are only read when a button is pressed.
-                  onPages: (keys) => _pageKeys = keys,
-                ),
-        ),
-        const SizedBox(height: Insets.lg),
-        // تلات أزرار في صف واحد بيتزنقوا على الموبايل، فبيبقوا فوق بعض.
-        // Three buttons in one row crowd a phone, so they stack there.
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final buttons = [
-              FilledButton.icon(
-                onPressed: _exporting ? null : () => _export(asPdf: true),
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 19),
-                label: Text(l.exportPdf),
-              ),
-              OutlinedButton.icon(
-                onPressed: _exporting ? null : () => _export(asPdf: false),
-                icon: const Icon(Icons.image_outlined, size: 19),
-                label: Text(l.exportPng),
-              ),
-              OutlinedButton.icon(
-                onPressed: _exporting ? null : widget.onSaveNote,
-                icon: const Icon(Icons.save_alt_rounded, size: 19),
-                label: Text(l.saveAsNote),
-              ),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(
-                    ClipboardData(text: readableMath(widget.page.toPlainText())),
-                  );
-                  if (context.mounted) showSnack(context, l.copied);
-                },
-                icon: const Icon(Icons.copy_rounded, size: 19),
-                label: Text(l.copyText),
-              ),
-            ];
-
-            if (constraints.maxWidth < 560) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final b in buttons)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: Insets.sm),
-                      child: b,
-                    ),
-                ],
-              );
-            }
-
-            return Row(
-              children: [
-                for (final b in buttons) ...[
-                  Expanded(child: b),
-                  if (b != buttons.last) const SizedBox(width: Insets.md),
-                ],
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: Insets.lg),
-        StudyToolsRow(
-          title: l.theSummary,
-          source: widget.page.toPlainText(),
-          subjectId: widget.subjectId,
-        ),
-      ],
     );
   }
 }

@@ -29,7 +29,12 @@ class StudyText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = style ?? Theme.of(context).textTheme.bodyMedium!;
-    final lines = readableMath(text).split('\n');
+    // سطر الصورة بيتفصل قبل تحويل المعادلات: الشرطة السفلية في الرابط
+    // كانت هتتقري كسفلية رياضية.
+    // Picture lines are split out before converting equations: an underscore
+    // in the URL would otherwise read as a maths subscript.
+    final hasImages = text.contains('[[img:');
+    final lines = (hasImages ? text : readableMath(text)).split('\n');
 
     final blocks = <Widget>[];
     var blankRun = 0;
@@ -47,7 +52,27 @@ class StudyText extends StatelessWidget {
         blocks.add(const SizedBox(height: Insets.md));
       }
       blankRun = 0;
-      blocks.add(_block(context, line, base));
+      final image = _image.firstMatch(line.trim());
+      if (image != null) {
+        blocks.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: Insets.sm),
+          child: ClipRRect(
+            borderRadius: Radii.all(Radii.sm),
+            child: Container(
+              color: Colors.white,
+              constraints: const BoxConstraints(maxHeight: 260),
+              child: Image.network(
+                image.group(1)!,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.image_not_supported_outlined),
+              ),
+            ),
+          ),
+        ));
+        continue;
+      }
+      blocks.add(_block(context, hasImages ? readableMath(line) : line, base));
     }
 
     if (blocks.isEmpty) return const SizedBox.shrink();
@@ -62,6 +87,10 @@ class StudyText extends StatelessWidget {
     // Selection wraps the whole column so copying takes the paragraphs together.
     return selectable ? SelectionArea(child: column) : column;
   }
+
+  /// صورة في كارت مراجعة: `[[img:رابط]]` في سطر لوحده.
+  /// A picture on a review card: `[[img:url]]` on a line of its own.
+  static final _image = RegExp(r'^\[\[img:(https?://[^\]\s]+)\]\]$');
 
   Widget _block(BuildContext context, String line, TextStyle base) {
     final scheme = Theme.of(context).colorScheme;
