@@ -1,45 +1,102 @@
 import 'dart:convert';
+import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'style_profile.dart';
 
-/// بيجيب صورة حقيقية لكل بلوك صورة في التلخيص، ويشيل اللي ملقاش ليه صورة.
-/// Finds a real picture for each image block, dropping any that find none.
+@JS('renderPdfPages')
+external JSPromise<JSArray<JSUint8Array?>> _renderPdfPages(
+  JSUint8Array bytes,
+  JSArray<JSNumber> pages,
+  JSNumber width,
+);
+
+/// بيجيب صورة لكل بلوك صورة في التلخيص، ويشيل اللي ملقاش ليه صورة.
+/// Finds a picture for each image block, dropping any that find none.
 ///
-/// الصور من ويكيبيديا وويكيميديا مش متولّدة: الرسم التشريحي أو مخطط الجهاز
-/// لازم يبقى صح، والصورة المتولّدة بتخترع تفاصيل. وكمان السيرفرين دول بيسمحوا
-/// بالقراية من موقع تاني، فالصورة بتتصوّر جوه الـ PNG/PDF عادي.
-/// Pictures come from Wikipedia/Wikimedia rather than being generated: an
-/// anatomy drawing or a device diagram has to be right, and generated images
-/// invent details. Both servers also allow cross-origin reads, so the picture
-/// still ends up inside the exported PNG/PDF.
-Future<SummaryPage> attachImages(SummaryPage page, {http.Client? client}) async {
-  final images = page.blocks.where((b) => b.type == BlockType.image).toList();
+/// الترتيب: صفحة من السلايدات المرفوعة (رسمة الدكتور نفسها)، وبعدها ويكيبيديا
+/// وويكيميديا. مفيش صور متولّدة: الرسم التشريحي لازم يبقى صح، والمتولّد
+/// بيخترع تفاصيل — المخططات اللي بتترسم من الكلام هي اللي بتسد المكان ده.
+/// The order: a page from the uploaded slides (the lecturer's own figure),
+/// then Wikipedia and Wikimedia. Nothing is generated: an anatomy drawing has
+/// to be right and generated ones invent details — the diagrams drawn from
+/// the text are what fill that gap.
+Future<SummaryPage> attachImages(
+  SummaryPage page, {
+  List<Uint8List> pdfs = const [],
+  http.Client? client,
+}) async {
+  final images = page.blocks
+      .where((b) => b.type == BlockType.image && !b.hasPicture)
+      .toList();
   if (images.isEmpty) return page;
+
+  final rendered = await _renderSlides(images, pdfs);
 
   final c = client ?? http.Client();
   try {
+    final needWeb = images.where((b) => rendered[b] == null).toList();
     final urls = await Future.wait(
-      images.map((b) => _lookup(c, b.query.isEmpty ? b.text : b.query)),
+      needWeb.map((b) => _lookup(c, b.query.isEmpty ? b.text : b.query)),
     );
     final found = <SummaryBlock, String>{};
     final used = <String>{};
-    for (var i = 0; i < images.length; i++) {
+    for (var i = 0; i < needWeb.length; i++) {
       final url = urls[i];
-      if (url != null && used.add(url)) found[images[i]] = url;
+      if (url != null && used.add(url)) found[needWeb[i]] = url;
     }
 
     return page.withBlocks([
       for (final b in page.blocks)
-        if (b.type != BlockType.image)
+        if (b.type != BlockType.image || b.hasPicture)
           b
+        else if (rendered[b] != null)
+          b.copyWith(imageData: rendered[b])
         else if (found[b] != null)
           b.copyWith(imageUrl: found[b]),
     ]);
   } finally {
     if (client == null) c.close();
   }
+}
+
+/// بيرسم صفحات السلايدات المطلوبة، ملف ملف. أي فشل (pdf.js ما اتحمّلش، رقم
+/// صفحة غلط) بيرجع لويكيبيديا بدل ما يوقّف التلخيص.
+/// Renders the requested slide pages, file by file. Any failure (pdf.js did
+/// not load, a wrong page number) falls back to Wikipedia instead of stopping
+/// the summary.
+Future<Map<SummaryBlock, Uint8List>> _renderSlides(
+  List<SummaryBlock> images,
+  List<Uint8List> pdfs,
+) async {
+  final out = <SummaryBlock, Uint8List>{};
+  if (pdfs.isEmpty) return out;
+
+  final byDoc = <int, List<SummaryBlock>>{};
+  for (final b in images) {
+    final page = b.page;
+    if (page == null || b.doc < 1 || b.doc > pdfs.length) continue;
+    byDoc.putIfAbsent(b.doc, () => []).add(b);
+  }
+
+  for (final entry in byDoc.entries) {
+    try {
+      final blocks = entry.value;
+      final result = await _renderPdfPages(
+        pdfs[entry.key - 1].toJS,
+        [for (final b in blocks) b.page!.toJS].toJS,
+        1100.toJS,
+      ).toDart;
+      final list = result.toDart;
+      for (var i = 0; i < blocks.length && i < list.length; i++) {
+        final bytes = list[i]?.toDart;
+        if (bytes != null && bytes.isNotEmpty) out[blocks[i]] = bytes;
+      }
+    } catch (_) {}
+  }
+  return out;
 }
 
 Future<String?> _lookup(http.Client client, String query) async {

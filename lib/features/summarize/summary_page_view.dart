@@ -255,6 +255,7 @@ class SummaryBlockView extends StatelessWidget {
           thickness: 1,
         ),
       BlockType.image => _Figure(block: block, color: color),
+      BlockType.diagram => _Diagram(block: block, color: color),
     };
   }
 }
@@ -272,27 +273,29 @@ class _Figure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = block.imageUrl;
-    if (url == null) return const SizedBox.shrink();
+    final data = block.imageData;
+    if (url == null && data == null) return const SizedBox.shrink();
+    Widget broken(BuildContext _, Object _, StackTrace? _) => Icon(
+          Icons.image_not_supported_outlined,
+          color: color.withValues(alpha: 0.4),
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          height: 210,
+          // صفحة السلايد أعرض وفيها كلام، فبتاخد مساحة أكبر شوية.
+          // A slide page is wider and carries text, so it gets a little more room.
+          height: data != null ? 240 : 210,
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: color.withValues(alpha: 0.35)),
             borderRadius: BorderRadius.circular(10),
           ),
           padding: const EdgeInsets.all(6),
-          child: Image.network(
-            url,
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => Icon(
-              Icons.image_not_supported_outlined,
-              color: color.withValues(alpha: 0.4),
-            ),
-          ),
+          child: data != null
+              ? Image.memory(data, fit: BoxFit.contain, errorBuilder: broken)
+              : Image.network(url!, fit: BoxFit.contain, errorBuilder: broken),
         ),
         if (block.text.trim().isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -667,6 +670,190 @@ class _PagedSummaryState extends State<PagedSummary> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// مخطط مرسوم من الكلام نفسه: خطوات، دورة، فروع، أو مقارنة.
+/// A diagram drawn from the text itself: steps, a cycle, branches, or a
+/// comparison.
+///
+/// بديل الصورة لما مفيش رسمة حقيقية: بيترسم بنفس الخط والألوان، فبيطلع
+/// حاد في الـ PDF، ومحتواه من المحاضرة مش متخيّل.
+/// The stand-in for a picture when no real figure exists: drawn in the same
+/// font and colours, so it comes out sharp in the PDF, and its content comes
+/// from the lecture rather than being imagined.
+class _Diagram extends StatelessWidget {
+  const _Diagram({required this.block, required this.color});
+
+  final SummaryBlock block;
+  final Color color;
+
+  TextStyle get _cell => const TextStyle(fontSize: 13.5, height: 1.5, color: SummaryPageView.ink);
+
+  Widget _node(String text, {bool filled = false}) => Container(
+        constraints: const BoxConstraints(minWidth: 70, maxWidth: 190),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: filled ? color : color.withValues(alpha: 0.1),
+          border: Border.all(color: color.withValues(alpha: 0.7), width: 1.4),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: TexText(
+          text,
+          textAlign: TextAlign.center,
+          style: filled
+              ? _cell.copyWith(color: Colors.white, fontWeight: FontWeight.w700)
+              : _cell,
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final body = switch (block.kind) {
+      'compare' => _compare(),
+      'tree' => _tree(),
+      'cycle' => _steps(cycle: true),
+      _ => _steps(cycle: false),
+    };
+    final showTitle = block.title.trim().isNotEmpty && block.kind != 'tree';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showTitle) ...[
+            TexText(
+              block.title,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: color),
+            ),
+            const SizedBox(height: 10),
+          ],
+          body,
+        ],
+      ),
+    );
+  }
+
+  Widget _steps({required bool cycle}) {
+    final items = block.items;
+    // السهم ده بيتقلب لوحده في العربي، فبيشاور على الخطوة اللي بعدها.
+    // This arrow mirrors itself in Arabic, so it points at the next step.
+    final arrow = Icon(Icons.arrow_forward_rounded, size: 20, color: color);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 10,
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) arrow,
+              _node(items[i]),
+            ],
+          ],
+        ),
+        if (cycle && items.length > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.replay_rounded, size: 18, color: color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: TexText(
+                  '← ${items.first}',
+                  style: _cell.copyWith(fontSize: 12.5, color: color),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _tree() {
+    return Column(
+      children: [
+        _node(block.title.isEmpty ? block.text : block.title, filled: true),
+        Container(width: 2, height: 14, color: color.withValues(alpha: 0.6)),
+        Container(
+          height: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          color: color.withValues(alpha: 0.6),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final item in block.items) _node(item)],
+        ),
+      ],
+    );
+  }
+
+  Widget _compare() {
+    final columns = block.columns;
+    final width = [
+      columns.length,
+      for (final r in block.rows) r.length,
+    ].fold<int>(0, (a, b) => a > b ? a : b);
+    if (width == 0) return const SizedBox.shrink();
+
+    List<String> pad(List<String> r) => [...r, ...List.filled(width - r.length, '')];
+    final line = BorderSide(color: color.withValues(alpha: 0.35));
+
+    return Table(
+      border: TableBorder(
+        top: line,
+        bottom: line,
+        left: line,
+        right: line,
+        horizontalInside: line,
+        verticalInside: line,
+      ),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        if (columns.isNotEmpty)
+          TableRow(
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.14)),
+            children: [
+              for (final c in pad(columns))
+                Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: TexText(
+                    c,
+                    textAlign: TextAlign.center,
+                    style: _cell.copyWith(fontWeight: FontWeight.w700, color: color),
+                  ),
+                ),
+            ],
+          ),
+        for (final r in block.rows)
+          TableRow(
+            children: [
+              for (var i = 0; i < width; i++)
+                Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: TexText(
+                    pad(r)[i],
+                    textAlign: TextAlign.center,
+                    style: i == 0 ? _cell.copyWith(fontWeight: FontWeight.w700) : _cell,
+                  ),
+                ),
+            ],
+          ),
+      ],
     );
   }
 }

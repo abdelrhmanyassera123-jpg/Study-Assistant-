@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -149,7 +150,7 @@ class StyleProfile {
 
 /// نوع البلوك في الصفحة المرسومة.
 /// The kind of block on the rendered page.
-enum BlockType { heading, box, bullets, numbered, highlight, note, divider, image }
+enum BlockType { heading, box, bullets, numbered, highlight, note, divider, image, diagram }
 
 /// وحدة واحدة من التلخيص المرسوم.
 /// One unit of the rendered summary.
@@ -164,6 +165,12 @@ class SummaryBlock {
     this.query = '',
     this.imageUrl,
     this.numberFrom = 1,
+    this.page,
+    this.doc = 1,
+    this.imageData,
+    this.kind = '',
+    this.columns = const [],
+    this.rows = const [],
   });
 
   final BlockType type;
@@ -176,6 +183,27 @@ class SummaryBlock {
   /// up afterwards.
   final String query;
   final String? imageUrl;
+
+  /// للصورة من السلايدات: رقم الصفحة في ملف الـ PDF رقم [doc] (الاتنين من 1).
+  /// For a picture from the slides: the page number in PDF number [doc] (both
+  /// counted from 1).
+  final int? page;
+  final int doc;
+
+  /// الصفحة بعد ما اترسمت JPEG.
+  /// The page once rendered as JPEG.
+  final Uint8List? imageData;
+
+  bool get hasPicture => imageUrl != null || imageData != null;
+
+  /// للمخطط: flow | cycle | compare | tree.
+  /// For a diagram: flow | cycle | compare | tree.
+  final String kind;
+
+  /// للمقارنة: عناوين الأعمدة والصفوف.
+  /// For a comparison: the column headings and the rows.
+  final List<String> columns;
+  final List<List<String>> rows;
 
   /// القايمة المرقمة لما تتقسم على عمودين بتكمّل العد مش تبدأه من الأول.
   /// A numbered list split across columns continues its count.
@@ -208,10 +236,36 @@ class SummaryBlock {
       imageUrl: '${m['image_url'] ?? ''}'.startsWith('https://upload.wikimedia.org/')
           ? m['image_url'] as String
           : null,
+      page: (m['page'] as num?)?.toInt(),
+      doc: (m['doc'] as num?)?.toInt() ?? 1,
+      imageData: _jpeg(m['image_data']),
+      kind: '${m['kind'] ?? ''}'.trim(),
+      columns: (m['columns'] as List<dynamic>? ?? const []).map((e) => '$e').toList(),
+      rows: [
+        for (final r in (m['rows'] as List<dynamic>? ?? const []))
+          if (r is List) r.map((e) => '$e').toList(),
+      ],
     );
   }
 
-  SummaryBlock copyWith({String? imageUrl, List<String>? items, int? numberFrom}) =>
+  /// صورة اترسمت عندنا من السلايدات بس — أي حاجة مش JPEG بتترفض.
+  /// Only a picture we rendered from the slides; anything not JPEG is refused.
+  static Uint8List? _jpeg(Object? v) {
+    if (v is! String || v.isEmpty) return null;
+    try {
+      final bytes = base64Decode(v);
+      return bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 ? bytes : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  SummaryBlock copyWith({
+    String? imageUrl,
+    Uint8List? imageData,
+    List<String>? items,
+    int? numberFrom,
+  }) =>
       SummaryBlock(
         type: type,
         title: title,
@@ -221,6 +275,12 @@ class SummaryBlock {
         query: query,
         imageUrl: imageUrl ?? this.imageUrl,
         numberFrom: numberFrom ?? this.numberFrom,
+        page: page,
+        doc: doc,
+        imageData: imageData ?? this.imageData,
+        kind: kind,
+        columns: columns,
+        rows: rows,
       );
 
   Map<String, dynamic> toJson() => {
@@ -230,6 +290,12 @@ class SummaryBlock {
         if (items.isNotEmpty) 'items': items,
         if (query.isNotEmpty) 'query': query,
         if (imageUrl != null) 'image_url': imageUrl,
+        if (page != null) 'page': page,
+        if (page != null) 'doc': doc,
+        if (imageData != null) 'image_data': base64Encode(imageData!),
+        if (kind.isNotEmpty) 'kind': kind,
+        if (columns.isNotEmpty) 'columns': columns,
+        if (rows.isNotEmpty) 'rows': rows,
         'color_index': colorIndex,
       };
 
@@ -246,7 +312,23 @@ class SummaryBlock {
         BlockType.note => text,
         BlockType.divider => '---',
         BlockType.image => text.isEmpty ? '' : '[$text]',
+        BlockType.diagram => _diagramText(),
       };
+
+  String _diagramText() {
+    final head = title.isEmpty ? '' : '**$title**\n';
+    return switch (kind) {
+      'compare' => head +
+          [
+            '| ${columns.join(' | ')} |',
+            '|${List.filled(columns.length, '---').join('|')}|',
+            for (final r in rows) '| ${r.join(' | ')} |',
+          ].join('\n'),
+      'tree' => '$head${items.map((i) => '- $i').join('\n')}',
+      'cycle' => '$head${[...items, if (items.isNotEmpty) items.first].join(' ← ')}',
+      _ => '$head${items.join(' ← ')}',
+    };
+  }
 }
 
 /// تلخيص مرسوم كامل.
@@ -410,7 +492,12 @@ ${profile.asInstructions()}
     {"type": "highlight", "text": "..."},
     {"type": "note",      "text": "..."},
     {"type": "divider"},
-    {"type": "image",     "query": "Mitochondrion", "text": "وصف قصير للصورة بالعربي"}
+    {"type": "image",     "page": 4, "doc": 1, "text": "وصف قصير للصورة بالعربي"},
+    {"type": "image",     "query": "Mitochondrion", "text": "وصف قصير للصورة بالعربي"},
+    {"type": "diagram",   "kind": "flow",    "title": "...", "items": ["خطوة", "خطوة", "خطوة"]},
+    {"type": "diagram",   "kind": "cycle",   "title": "...", "items": ["مرحلة", "مرحلة", "مرحلة"]},
+    {"type": "diagram",   "kind": "tree",    "title": "الفكرة الأساسية", "items": ["فرع", "فرع", "فرع"]},
+    {"type": "diagram",   "kind": "compare", "title": "...", "columns": ["", "أ", "ب"], "rows": [["وجه المقارنة", "...", "..."]]}
   ]
 }
 
@@ -418,10 +505,19 @@ ${profile.asInstructions()}
 - رتّب البلوكات بنفس ترتيب أقسام الطالب.
 - استخدم "box" للتعريفات والقواعد لو الطالب بيحط مربعات.
 - استخدم "highlight" للي بيتنسى أو اللي بيتكرر في الامتحان.
-- حط من 2 لـ 4 بلوكات "image" جنب الأفكار اللي الصورة بتفهّمها فعلاً: رسم
-  تشريحي، شكل جهاز، مخطط عملية، خريطة، منحنى مشهور. "query" اسم الموضوع
-  بالإنجليزي زي عنوان مقالة ويكيبيديا (كلمة أو اتنين، مش جملة). "text" سطر
-  واحد بالعربي بيقول الصورة بتوضّح إيه. متحطش صورة لفكرة مجردة مالهاش شكل.
+- الصور (من 2 لـ 4 بلوكات "image") جنب الأفكار اللي الصورة بتفهّمها فعلاً،
+  وبالترتيب ده:
+  1. لو فيه ملف PDF مرفق (سلايدات) وفيه صفحة عليها رسمة أو صورة أو مخطط
+     للفكرة دي: استخدم "page" (رقم الصفحة، أول صفحة = 1) و"doc" (رقم الملف
+     بترتيب إرفاقه، الأول = 1). ده الأفضل لأنها رسمة الدكتور نفسها. متختارش
+     صفحة كلها كلام من غير رسمة.
+  2. لو مفيش: "query" اسم الموضوع بالإنجليزي زي عنوان مقالة ويكيبيديا (كلمة
+     أو اتنين، مش جملة) — للرسوم التشريحية والأجهزة والأشكال المعروفة.
+  "text" سطر واحد بالعربي بيقول الصورة بتوضّح إيه. متحطش صورة لفكرة مجردة.
+- المخططات ("diagram") بتترسم من الكلام نفسه، فحطها كل ما تنفع (1 لـ 3):
+  "flow" لخطوات أو مراحل بالترتيب، "cycle" لدورة بترجع لأولها، "tree" لتصنيف
+  أو فكرة ليها فروع، "compare" لمقارنة بين حاجتين أو أكتر (أول عمود فاضي في
+  "columns" وأول خانة في كل صف هي وجه المقارنة). الخانات قصيرة: كلمتين لـ 6.
 - color_index رقم من 0 لعدد ألوان الطالب ناقص واحد.
 - المحتوى كله من المحاضرة المعطاة. متخترعش معلومة ولا مثال.
 - اكتب بالعربي وبنفس نبرة الطالب.

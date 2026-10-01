@@ -26,6 +26,7 @@ class LectureJob {
     this.cardsMade = 0,
     this.partCount = 0,
     this.transcript = '',
+    this.pdfPaths = const [],
   });
 
   final String id;
@@ -48,12 +49,17 @@ class LectureJob {
   /// The transcript once finished, used for "what was missed" and edits.
   final String transcript;
 
+  /// مسارات السلايدات (PDF) في التخزين، بترتيب إرفاقها للموديل.
+  /// Storage paths of the slides (PDF), in the order they went to the model.
+  final List<String> pdfPaths;
+
   bool get isDone => status == 'done';
   bool get isFailed => status == 'failed';
   bool get isPending => status == 'queued' || status == 'working';
 
   factory LectureJob.fromMap(Map<String, dynamic> m) {
     final parts = (m['parts'] as List?) ?? const [];
+    final docs = (m['docs'] as List?) ?? const [];
     final result = m['result'];
     return LectureJob(
       id: m['id'] as String,
@@ -74,6 +80,11 @@ class LectureJob {
         for (final p in parts)
           if (p is Map && p['transcript'] is String) p['transcript'] as String,
       ].where((t) => t.trim().isNotEmpty).join('\n\n'),
+      pdfPaths: [
+        for (final d in docs)
+          if (d is Map && d['mime'] == 'application/pdf' && d['path'] is String)
+            d['path'] as String,
+      ],
     );
   }
 }
@@ -217,6 +228,19 @@ class LectureJobs {
   Future<void> saveResult(String id, SummaryPage page) => _db
       .from('lecture_jobs')
       .update({'result': page.toJson()}).eq('id', id);
+
+  /// السلايدات بتفضل في التخزين بعد التلخيص عشان صفحاتها تترسم هنا.
+  /// The slides stay in storage after summarizing so their pages can be drawn
+  /// here.
+  Future<List<Uint8List>> pdfs(LectureJob job) async {
+    final out = <Uint8List>[];
+    for (final path in job.pdfPaths) {
+      try {
+        out.add(await _db.storage.from('lectures').download(path));
+      } catch (_) {}
+    }
+    return out;
+  }
 
   Future<void> delete(String id) => _db.from('lecture_jobs').delete().eq('id', id);
 }

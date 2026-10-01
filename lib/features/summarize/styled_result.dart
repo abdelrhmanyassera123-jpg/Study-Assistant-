@@ -29,6 +29,7 @@ class StyledResult extends ConsumerStatefulWidget {
     required this.onPageChanged,
     required this.onSaveNote,
     this.source = '',
+    this.pdfs = const [],
   });
 
   final SummaryPage page;
@@ -44,6 +45,10 @@ class StyledResult extends ConsumerStatefulWidget {
   /// The lecture's original text: without it there is no "what was missed"
   /// and edits work from the page alone.
   final String source;
+
+  /// السلايدات (PDF) — عشان "ضيف صورة" ياخد رسمة منها.
+  /// The slides (PDF), so "add an illustration" can take a figure from them.
+  final List<Uint8List> pdfs;
 
   @override
   ConsumerState<StyledResult> createState() => _StyledResultState();
@@ -162,8 +167,8 @@ class _StyledResultState extends ConsumerState<StyledResult> {
         ...replacement,
         ...blocks.sublist(index + 1),
       ]);
-      if (replacement.any((b) => b.type == BlockType.image && b.imageUrl == null)) {
-        updated = await attachImages(updated);
+      if (replacement.any((b) => b.type == BlockType.image && !b.hasPicture)) {
+        updated = await attachImages(updated, pdfs: widget.pdfs);
       }
       busy.close();
       if (mounted) widget.onPageChanged(updated);
@@ -207,7 +212,7 @@ class _StyledResultState extends ConsumerState<StyledResult> {
   Widget build(BuildContext context) {
     final l = context.l;
     final images = widget.page.blocks
-        .where((b) => b.type == BlockType.image && b.imageUrl != null)
+        .where((b) => b.type == BlockType.image && b.hasPicture)
         .toList();
 
     return Column(

@@ -47,6 +47,9 @@ class _ImageQuizPageState extends ConsumerState<ImageQuizPage> {
 
   bool get _done => _index >= _order.length;
 
+  List<SummaryBlock> get _savable =>
+      widget.figures.where((f) => f.imageUrl != null).toList();
+
   void _answer(bool knew) {
     setState(() {
       if (knew) _known++;
@@ -59,7 +62,10 @@ class _ImageQuizPageState extends ConsumerState<ImageQuizPage> {
     setState(() => _saving = true);
     final repo = ref.read(repositoryProvider);
     try {
-      for (final f in widget.figures) {
+      // صفحات السلايدات صور كبيرة جوه التطبيق مش روابط، فمش بتتحفظ في كارت.
+      // Slide pages are large in-app images rather than links, so they are
+      // not saved into a card.
+      for (final f in _savable) {
         await repo.addCard(Flashcard(
           id: '',
           front: '[[img:${f.imageUrl}]]\n${context.l.whatIsThisPicture}',
@@ -72,7 +78,7 @@ class _ImageQuizPageState extends ConsumerState<ImageQuizPage> {
       ref.invalidate(cardsProvider);
       if (mounted) {
         setState(() => _saved = true);
-        showSnack(context, context.l.cardsSaved(widget.figures.length));
+        showSnack(context, context.l.cardsSaved(_savable.length));
       }
     } catch (e) {
       if (mounted) showSnack(context, '$e');
@@ -121,7 +127,7 @@ class _ImageQuizPageState extends ConsumerState<ImageQuizPage> {
                   ),
                   const SizedBox(height: Insets.md),
                   OutlinedButton.icon(
-                    onPressed: _saving || _saved ? null : _saveCards,
+                    onPressed: _saving || _saved || _savable.isEmpty ? null : _saveCards,
                     icon: const Icon(Icons.style_outlined),
                     label: Text(_saved ? l.savedAsCards : l.saveAsCards),
                   ),
@@ -138,12 +144,14 @@ class _ImageQuizPageState extends ConsumerState<ImageQuizPage> {
                       color: Colors.white,
                       borderRadius: Radii.all(Radii.md),
                     ),
-                    child: Image.network(
-                      _order[_index].imageUrl!,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Icons.image_not_supported_outlined),
-                    ),
+                    child: _order[_index].imageData != null
+                        ? Image.memory(_order[_index].imageData!, fit: BoxFit.contain)
+                        : Image.network(
+                            _order[_index].imageUrl!,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.image_not_supported_outlined),
+                          ),
                   ),
                   const SizedBox(height: Insets.xl),
                   Text(l.whatIsThisPicture,

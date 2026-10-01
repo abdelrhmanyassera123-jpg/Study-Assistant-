@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -174,6 +175,7 @@ class JobResultPage extends ConsumerStatefulWidget {
 class _JobResultPageState extends ConsumerState<JobResultPage> {
   LectureJob? _job;
   SummaryPage? _page;
+  List<Uint8List> _pdfs = const [];
   Object? _error;
 
   @override
@@ -187,19 +189,21 @@ class _JobResultPageState extends ConsumerState<JobResultPage> {
       final jobs = ref.read(lectureJobsProvider);
       final job = await jobs.byId(widget.jobId);
       var page = job?.result;
+      final pdfs = job == null ? const <Uint8List>[] : await jobs.pdfs(job);
       // الصور بتتدوّر عليها هنا مرة واحدة وتتحفظ، عشان المرة الجاية تفتح على طول.
       // Pictures are looked up here once and saved, so next time it opens
       // straight away.
       if (job != null &&
           page != null &&
-          page.blocks.any((b) => b.type == BlockType.image && b.imageUrl == null)) {
-        page = await attachImages(page);
+          page.blocks.any((b) => b.type == BlockType.image && !b.hasPicture)) {
+        page = await attachImages(page, pdfs: pdfs);
         await jobs.saveResult(job.id, page);
       }
       if (mounted) {
         setState(() {
           _job = job;
           _page = page;
+          _pdfs = pdfs;
         });
       }
     } catch (e) {
@@ -272,6 +276,7 @@ class _JobResultPageState extends ConsumerState<JobResultPage> {
                             : StyleProfile.fromJson(raw),
                         subjectId: job.subjectId,
                         source: job.transcript,
+                        pdfs: _pdfs,
                         onPageChanged: _changed,
                         onSaveNote: _saveNote,
                       ),

@@ -334,7 +334,10 @@ async function step(job: Job): Promise<boolean> {
   // 6) خلص: نشيل الصوت من التخزين ونبعت إشعار.
   // 6) Done: remove the audio from storage and send a notification.
   await patch(job.id, { status: "done", step: "", error: null, locked_until: null });
-  await removeFiles([...job.parts, ...job.docs].map((p) => p.path));
+  // الصوت بيتمسح؛ الـ PDF بيفضل عشان التطبيق يرسم منه صفحات السلايدات.
+  // The audio is removed; the PDFs stay so the app can draw slide pages
+  // from them.
+  await removeFiles(job.parts.map((p) => p.path));
   await notify(job);
   return true;
 }
@@ -360,6 +363,23 @@ function plainText(page: Page): string {
       case "highlight": lines.push(`**${b.text ?? ""}**`); break;
       case "divider": lines.push("---"); break;
       case "image": if (b.text) lines.push(`[${b.text}]`); break;
+      case "diagram": {
+        const head = b.title ? `**${b.title}**\n` : "";
+        if (b.kind === "compare") {
+          const cols = Array.isArray(b.columns) ? b.columns as string[] : [];
+          const rows = Array.isArray(b.rows) ? b.rows as string[][] : [];
+          lines.push(head + [
+            `| ${cols.join(" | ")} |`,
+            `|${cols.map(() => "---").join("|")}|`,
+            ...rows.map((r) => `| ${r.join(" | ")} |`),
+          ].join("\n"));
+        } else if (b.kind === "tree") {
+          lines.push(head + items.map((i) => `- ${i}`).join("\n"));
+        } else {
+          lines.push(head + items.join(" ← "));
+        }
+        break;
+      }
       default: if (b.text) lines.push(b.text);
     }
   }

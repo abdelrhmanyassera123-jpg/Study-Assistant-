@@ -155,6 +155,15 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     super.dispose();
   }
 
+  /// السلايدات المرفوعة كـ PDF، بالترتيب اللي اتبعتت بيه للموديل — رقم "doc"
+  /// في بلوك الصورة بيشاور على ترتيبها هنا.
+  /// The slides uploaded as PDF, in the order they were sent to the model —
+  /// an image block's "doc" number points into this order.
+  List<Uint8List> get _pdfs => [
+        for (final d in _docs)
+          if (d.mimeType == 'application/pdf') d.bytes,
+      ];
+
   bool get _hasInput =>
       _lecture.text.trim().isNotEmpty || _docs.isNotEmpty || _clips.isNotEmpty;
 
@@ -542,7 +551,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       if (!mounted || run != _runId) return;
       if (page.blocks.any((b) => b.type == BlockType.image)) {
         setState(() => _phase = context.l.findingImages);
-        page = await attachImages(page);
+        page = await attachImages(page, pdfs: _pdfs);
         if (!mounted || run != _runId) return;
       }
       setState(() {
@@ -1087,6 +1096,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       ),
                       subjectId: _subjectId,
                       source: _source,
+                      pdfs: _pdfs,
                       onPageChanged: (page) => setState(() => _page = page),
                       onSaveNote: _saveAsNote,
                     ),
