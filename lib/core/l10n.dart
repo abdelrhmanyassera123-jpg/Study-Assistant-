@@ -341,6 +341,10 @@ class AppL10n {
         'خطة مبنية على جدولك ومهامك والكروت المستحقة.',
         'A plan built from your timetable, your tasks and the cards due.',
       );
+  String get dailyStudyGoal => _('هدفك اليومي للمذاكرة', 'Daily study goal');
+  String hoursShort(int h) => isAr
+      ? (h == 2 ? 'ساعتين' : '$h ساعات')
+      : '$h h';
   String get makingPlan => _('بيرتّب الأسبوع...', 'Laying out the week...');
   String get addToTasks => _('ضيفها للمهام', 'Add to tasks');
   String get addedToTasks => _('اتضافت للمهام', 'Added to your tasks');

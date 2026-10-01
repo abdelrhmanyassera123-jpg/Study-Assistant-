@@ -19,9 +19,9 @@ String buildReminderBody(
 }) {
   final custom = prefs.customBody?.trim();
   if (custom == null || custom.isEmpty) {
-    return location.isEmpty
-        ? l.reminderBody(minutes)
-        : '${l.reminderBody(minutes)} · $location';
+    return [l.reminderBody(minutes), location, lecturer]
+        .where((part) => part.isNotEmpty)
+        .join(' · ');
   }
   return custom
       .replaceAll('{minutes}', '$minutes')

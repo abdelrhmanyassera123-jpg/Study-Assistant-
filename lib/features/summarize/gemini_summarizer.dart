@@ -833,14 +833,25 @@ class GeminiSummarizer implements Summarizer {
           if (planItem != null) items.add(planItem);
         }
       }
-      if (items.isNotEmpty) days.add(PlanDay(weekday: weekday, items: items));
+      items.sort((a, b) => a.time.compareTo(b.time));
+      if (items.isNotEmpty) {
+        days.add(PlanDay(
+          weekday: weekday,
+          items: items,
+          focus: '${row['focus'] ?? ''}'.trim(),
+        ));
+      }
     }
 
     if (days.isEmpty) {
       throw const SummarizerException('مطلعتش خطة — جرّب تاني.');
     }
 
-    days.sort((a, b) => a.weekday.compareTo(b.weekday));
+    // الأسبوع بيبدأ من النهاردة، مش من الاتنين.
+    // The week starts today, not on Monday.
+    final today = DateTime.now().weekday;
+    int fromToday(PlanDay d) => (d.weekday - today) % 7;
+    days.sort((a, b) => fromToday(a).compareTo(fromToday(b)));
     return StudyPlan(
       days: days,
       note: '${parsed?['note'] ?? ''}'.trim(),

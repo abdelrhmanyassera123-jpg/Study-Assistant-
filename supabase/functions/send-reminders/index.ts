@@ -44,6 +44,7 @@ interface ScheduleEntryRow {
   user_id: string;
   title: string;
   location: string;
+  lecturer: string;
   weekday: number; // 1 = Monday ... 7 = Sunday
   start_minutes: number;
   remind_minutes: number;
@@ -166,7 +167,7 @@ async function handleCronTick(): Promise<Response> {
       minutes: entry.remind_minutes,
       location: entry.location.trim(),
       lecture: entry.title,
-      lecturer: "",
+      lecturer: (entry.lecturer ?? "").trim(),
     });
 
     for (const sub of subs) {
@@ -276,9 +277,9 @@ function applyTemplate(
 ): string {
   const trimmed = custom?.trim();
   if (!trimmed) {
-    return vars.location
-      ? `${reminderBody(vars.minutes)} · ${vars.location}`
-      : reminderBody(vars.minutes);
+    return [reminderBody(vars.minutes), vars.location, vars.lecturer]
+      .filter((part) => part)
+      .join(" · ");
   }
   return trimmed
     .replaceAll("{minutes}", String(vars.minutes))
@@ -385,7 +386,7 @@ function restHeaders(): Record<string, string> {
 
 async function fetchDueEntries(): Promise<ScheduleEntryRow[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/schedule_entries?select=id,user_id,title,location,weekday,start_minutes,remind_minutes&remind_minutes=not.is.null`,
+    `${SUPABASE_URL}/rest/v1/schedule_entries?select=id,user_id,title,location,lecturer,weekday,start_minutes,remind_minutes&remind_minutes=not.is.null`,
     { headers: restHeaders() },
   );
   if (!res.ok) {
