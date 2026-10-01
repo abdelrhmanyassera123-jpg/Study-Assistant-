@@ -727,14 +727,30 @@ class GeminiSummarizer implements Summarizer {
   Future<List<String>> findMissed({
     required String source,
     required String summary,
+    List<LectureFile> files = const [],
   }) async {
     _requireSignIn();
-    _requireText(source);
+    if (files.isEmpty) _requireText(source);
+    _requireFitting(files);
+
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
+    }
+
+    final text = source.trim();
+    final lecture = switch ((files.isNotEmpty, text.isNotEmpty)) {
+      (true, true) => '(المحاضرة في الملف المرفق، ومعاها النص ده من نفس المحاضرة)\n\n${_capped(text)}',
+      (true, false) => '(المحاضرة في الملف المرفق)',
+      _ => _capped(text),
+    };
     final result = await _postJson({
       'action': 'json',
       'model': config.requestedModel,
       'system': ReworkPrompts.missedSystem,
-      'prompt': ReworkPrompts.missedPrompt(_capped(source), summary),
+      'prompt': ReworkPrompts.missedPrompt(lecture, summary),
+      if (files.isNotEmpty) 'files': _fileParts(inline, uploads),
     });
     final rows = decodeModelJson(result)?['missed'];
     if (rows is! List) {

@@ -1187,6 +1187,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       ),
                       subjectId: _subjectId,
                       source: _source,
+                      sourceFiles: _docs,
                       pdfs: _imageMode == ImageMode.slides ? _pdfs : const [],
                       onPageChanged: (page) => setState(() => _page = page),
                       onSaveNote: _saveAsNote,

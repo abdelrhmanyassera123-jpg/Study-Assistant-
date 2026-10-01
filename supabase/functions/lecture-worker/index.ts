@@ -240,17 +240,26 @@ async function step(job: Job): Promise<boolean> {
 
   // 3) إيه اللي اتقال ومادخلش — بيتضاف للصفحة على طول.
   // 3) What was said but left out — appended to the page right away.
-  if (job.missed === null && r.missed_system && r.missed_prompt && source.length >= 200) {
+  // محاضرة جت PDF بس (من غير كلام) بتتراجع على الملف نفسه.
+  // A lecture that came as a PDF only (no speech) is checked against the
+  // file itself.
+  const hasDocs = job.docs.length > 0;
+  if (job.missed === null && r.missed_system && r.missed_prompt && (source.length >= 200 || hasDocs)) {
     await patch(job.id, { step: "missed" });
     let missed: string[] = [];
     try {
+      const files = hasDocs ? await Promise.all(job.docs.map((d) => filePart(job.user_id, d))) : [];
+      const lecture = hasDocs
+        ? `(المحاضرة في الملف المرفق${source ? "، ومعاها النص ده من نفس المحاضرة" : ""})\n\n${source.slice(0, 400_000)}`
+        : source.slice(0, 400_000);
       const out = await jsonCall(job.user_id, {
         action: "json",
         model: r.model ?? "auto",
         system: r.missed_system,
         prompt: r.missed_prompt
-          .replaceAll("{{SOURCE}}", source.slice(0, 400_000))
+          .replaceAll("{{SOURCE}}", lecture)
           .replaceAll("{{SUMMARY}}", plainText(job.result)),
+        files: files.length ? files : undefined,
       }) as { missed?: unknown };
       missed = Array.isArray(out?.missed)
         ? out.missed.map((m) => `${m}`.trim()).filter(Boolean)

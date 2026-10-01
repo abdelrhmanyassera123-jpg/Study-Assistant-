@@ -10,6 +10,7 @@ import '../../core/math_text.dart';
 import '../../data/providers.dart';
 import '../../widgets/common.dart';
 import '../summarize/style_profile.dart';
+import '../summarize/summarizer.dart';
 import '../summarize/styled_result.dart';
 import '../summarize/summary_images.dart';
 import 'lecture_job.dart';
@@ -276,6 +277,14 @@ class _JobResultPageState extends ConsumerState<JobResultPage> {
                             : StyleProfile.fromJson(raw),
                         subjectId: job.subjectId,
                         source: job.transcript,
+                        sourceFiles: [
+                          for (var i = 0; i < _pdfs.length; i++)
+                            LectureFile(
+                              name: 'slides-${i + 1}.pdf',
+                              mimeType: 'application/pdf',
+                              bytes: _pdfs[i],
+                            ),
+                        ],
                         pdfs: job.imageMode == ImageMode.slides ? _pdfs : const [],
                         onPageChanged: _changed,
                         onSaveNote: _saveNote,

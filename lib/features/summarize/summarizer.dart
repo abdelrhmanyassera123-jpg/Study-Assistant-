@@ -439,7 +439,16 @@ abstract class Summarizer {
   /// بيقارن التلخيص بالمصدر ويرجّع النقط المهمة اللي اتقالت ومادخلتش.
   /// Compares the summary with its source and returns the important points
   /// that were said but left out.
-  Future<List<String>> findMissed({required String source, required String summary});
+  ///
+  /// [files] للمحاضرة اللي جت ملف (PDF أو صور) — من غيرها التلخيص المعمول
+  /// من سلايدات بس كان ما ينفعش يتراجع.
+  /// [files] for a lecture that came as a file (PDF or pictures); without it
+  /// a summary made from slides alone could not be checked.
+  Future<List<String>> findMissed({
+    required String source,
+    required String summary,
+    List<LectureFile> files,
+  });
 
   /// بيقرا امتحان قديم ويرجّع أسئلته، كل واحد مربوط بمحاضرة من [lectures].
   /// Reads an old exam and returns its questions, each tied to a lecture from

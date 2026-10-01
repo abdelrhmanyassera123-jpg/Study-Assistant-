@@ -30,6 +30,7 @@ class StyledResult extends ConsumerStatefulWidget {
     required this.onSaveNote,
     this.source = '',
     this.pdfs = const [],
+    this.sourceFiles = const [],
   });
 
   final SummaryPage page;
@@ -49,6 +50,12 @@ class StyledResult extends ConsumerStatefulWidget {
   /// السلايدات (PDF) — عشان "ضيف صورة" ياخد رسمة منها.
   /// The slides (PDF), so "add an illustration" can take a figure from them.
   final List<Uint8List> pdfs;
+
+  /// ملفات المحاضرة نفسها (PDF/صور) — "إيه اللي اتنسى" بيقارن بيها لو
+  /// المحاضرة جت ملف مش نص.
+  /// The lecture's own files (PDF/pictures); "what was missed" compares
+  /// against them when the lecture came as a file rather than text.
+  final List<LectureFile> sourceFiles;
 
   @override
   ConsumerState<StyledResult> createState() => _StyledResultState();
@@ -184,6 +191,7 @@ class _StyledResultState extends ConsumerState<StyledResult> {
       final missed = await ref.read(activeSummarizerProvider).findMissed(
             source: widget.source,
             summary: widget.page.toPlainText(),
+            files: widget.sourceFiles,
           );
       if (mounted) setState(() => _missed = missed);
     } on SummarizerException catch (e) {
@@ -279,7 +287,7 @@ class _StyledResultState extends ConsumerState<StyledResult> {
                 ),
         ),
         const SizedBox(height: Insets.lg),
-        if (widget.source.trim().length >= 200) ...[
+        if (widget.source.trim().length >= 200 || widget.sourceFiles.isNotEmpty) ...[
           _MissedCard(
             checking: _checking,
             missed: _missed,
