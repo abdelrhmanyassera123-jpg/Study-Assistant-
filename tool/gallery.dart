@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:study_assistant/core/app_theme.dart';
 import 'package:study_assistant/core/l10n.dart';
+import 'package:study_assistant/data/offline_sync.dart';
 import 'package:study_assistant/data/providers.dart';
 import 'package:study_assistant/features/auth/login_page.dart';
 import 'package:study_assistant/features/flashcards/review_page.dart';
@@ -261,6 +262,8 @@ Future<void> main() async {
               createdAt: '2026-01-01T00:00:00Z',
             )),
         sectionProvider.overrideWith(() => _FixedSection(section)),
+        currentUserIdProvider.overrideWithValue('demo'),
+        offlineSyncProvider.overrideWithValue(null),
       ],
       child: _GalleryApp(screen: screen, lang: lang, theme: theme, scale: scale),
     ),

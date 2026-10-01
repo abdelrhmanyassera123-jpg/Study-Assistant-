@@ -668,3 +668,9 @@ test/                              143 اختبار: SM-2، الإحصائيات
   من غير reload.
 - **اشتراك الـ Push ملك الجهاز:** بيتحفظ بـ `claim_push_subscription` اللي
   بتنقله للحساب الحالي، وبيتمسح من الحساب قبل تسجيل الخروج.
+- **أوفلاين:** `pwa-sw.js` بيحفظ ملفات التطبيق (الشبكة الأول)، و`web/flutter_bootstrap.js`
+  متعدّل عشان فلاتر ما يسجّلش الـ service worker بتاعه — كان بيشيل بتاعنا كل
+  فتحة. البيانات بتتحفظ في Cache Storage من `Repository._rows`، والمراجعات من
+  غير نت بتستنى في طابور وبتتبعت من `offlineSyncProvider`.
+- **`flutter analyze` مش بيمسك أخطاء `toJS`.** دالة بترجع Future متحوّلة بـ
+  toJS بتعدّي الفحص وتوقع البناء. اعمل `flutter build web` قبل أي commit فيه interop.

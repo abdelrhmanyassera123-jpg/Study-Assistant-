@@ -5,6 +5,7 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/settings.dart';
 import '../../core/launch_intent.dart';
+import '../../data/offline_sync.dart';
 import '../../core/share_target.dart';
 import '../dashboard/dashboard_page.dart';
 import '../flashcards/flashcards_page.dart';
@@ -116,6 +117,7 @@ class HomeShell extends ConsumerWidget {
     // The reminders are watched here: with nobody holding the service its timer
     // never runs and no reminder ever fires.
     ref.watch(reminderServiceProvider);
+    ref.watch(offlineSyncProvider);
 
     final content = Scaffold(
       appBar: _SectionBar(section: section, showQuickActions: !hasRail),

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/models.dart';
+import 'offline_store.dart';
 
 /// كل القراءة والكتابة من Supabase بتعدي من هنا.
 /// Every read and write to Supabase goes through this class.
@@ -20,14 +21,76 @@ class Repository {
     return id;
   }
 
+  // ------------------------------------------------------------- offline
+
+  /// بيجيب الصفوف من السيرفر ويحفظ نسخة منها؛ لو مفيش نت بيرجّع آخر نسخة.
+  /// Fetches rows from the server and keeps a copy; with no connection it
+  /// returns the latest copy instead.
+  Future<List<Map<String, dynamic>>> _rows(
+    String key,
+    Future<List<Map<String, dynamic>>> Function() fetch,
+  ) async {
+    final cacheKey = '$_uid/$key';
+    try {
+      final rows = await fetch();
+      OfflineStore.put(cacheKey, rows);
+      return rows;
+    } catch (e) {
+      final cached = await OfflineStore.get(cacheKey);
+      if (cached is List) {
+        return [for (final r in cached) if (r is Map) r.cast<String, dynamic>()];
+      }
+      rethrow;
+    }
+  }
+
+  String get _pendingKey => '$_uid/pending_reviews';
+
+  /// مراجعات اتعملت من غير نت وبتستنى تتبعت.
+  /// Reviews done offline, waiting to be sent.
+  Future<List<Map<String, dynamic>>> _pending() async {
+    final raw = await OfflineStore.get(_pendingKey);
+    return raw is List
+        ? [for (final r in raw) if (r is Map) r.cast<String, dynamic>()]
+        : <Map<String, dynamic>>[];
+  }
+
+  /// بيبعت المراجعات المستنية بالترتيب. اللي يفشل يفضل في الطابور للمرة الجاية.
+  /// Sends waiting reviews in order. Whatever fails stays queued for next time.
+  Future<int> flushPendingReviews() async {
+    final pending = await _pending();
+    if (pending.isEmpty) return 0;
+    var sent = 0;
+    for (final op in pending) {
+      try {
+        await _db.from('flashcards').update(
+              (op['card'] as Map).cast<String, dynamic>(),
+            ).eq('id', op['id'] as String);
+        await _db.from('card_reviews').insert({
+          'user_id': _uid,
+          'card_id': op['id'],
+          'grade': op['grade'],
+          'reviewed_at': op['at'],
+        });
+        sent++;
+      } catch (_) {
+        break;
+      }
+    }
+    await OfflineStore.put(_pendingKey, pending.sublist(sent));
+    return sent;
+  }
+
   // ------------------------------------------------------------ subjects
   // ملحوظة: order() في Supabase بيرتب تنازلي افتراضيًا، فلازم ascending: true
   // كل ما نعوز الأقدم/الأصغر الأول.
   // Note: Supabase's order() defaults to descending, so ascending: true is
   // explicit wherever we want oldest/smallest first.
   Future<List<Subject>> subjects() async {
-    final rows =
-        await _db.from('subjects').select().order('created_at', ascending: true);
+    final rows = await _rows(
+      'subjects',
+      () => _db.from('subjects').select().order('created_at', ascending: true),
+    );
     return rows.map((r) => Subject.fromMap(r)).toList();
   }
 
@@ -42,14 +105,17 @@ class Repository {
 
   // --------------------------------------------------------------- tasks
   Future<List<Task>> tasks() async {
-    final rows = await _db
-        .from('tasks')
-        .select()
-        // المفتوح قبل الخالص، الأقرب تسليمًا الأول، واللي من غير تاريخ في الآخر.
-        // Open before done, soonest due first, undated last.
-        .order('is_done', ascending: true)
-        .order('due_date', ascending: true, nullsFirst: false)
-        .order('created_at', ascending: false);
+    final rows = await _rows(
+      'tasks',
+      () => _db
+          .from('tasks')
+          .select()
+          // المفتوح قبل الخالص، الأقرب تسليمًا الأول، واللي من غير تاريخ في الآخر.
+          // Open before done, soonest due first, undated last.
+          .order('is_done', ascending: true)
+          .order('due_date', ascending: true, nullsFirst: false)
+          .order('created_at', ascending: false),
+    );
     return rows.map((r) => Task.fromMap(r)).toList();
   }
 
@@ -67,8 +133,10 @@ class Repository {
 
   // --------------------------------------------------------------- notes
   Future<List<Note>> notes() async {
-    final rows =
-        await _db.from('notes').select().order('updated_at', ascending: false);
+    final rows = await _rows(
+      'notes',
+      () => _db.from('notes').select().order('updated_at', ascending: false),
+    );
     return rows.map((r) => Note.fromMap(r)).toList();
   }
 
@@ -83,8 +151,10 @@ class Repository {
   Future<List<Flashcard>> cards() async {
     // الأقدم استحقاقًا الأول.
     // Most overdue first.
-    final rows =
-        await _db.from('flashcards').select().order('due_at', ascending: true);
+    final rows = await _rows(
+      'cards',
+      () => _db.from('flashcards').select().order('due_at', ascending: true),
+    );
     return rows.map((r) => Flashcard.fromMap(r)).toList();
   }
 
@@ -99,14 +169,34 @@ class Repository {
 
   /// بيحفظ جدولة الكارت الجديدة ويسجل المراجعة في نفس الوقت.
   /// Saves the card's new schedule and logs the review.
+  ///
+  /// من غير نت المراجعة بتتحفظ في طابور وبتتبعت لما النت يرجع، ونسخة الكروت
+  /// اللي على الجهاز بتتحدّث عشان الكارت ما يرجعش مستحق.
+  /// Offline, the review is queued and sent when the connection returns, and
+  /// the on-device copy of the cards is updated so the card is not due again.
   Future<Flashcard> reviewCard(Flashcard card, ReviewGrade grade) async {
     final updated = card.schedule(grade);
-    await updateCard(updated);
-    await _db.from('card_reviews').insert({
-      'user_id': _uid,
-      'card_id': card.id,
-      'grade': grade.index,
-    });
+    final at = DateTime.now().toUtc().toIso8601String();
+    try {
+      await updateCard(updated);
+      await _db.from('card_reviews').insert({
+        'user_id': _uid,
+        'card_id': card.id,
+        'grade': grade.index,
+        'reviewed_at': at,
+      });
+    } catch (_) {
+      final pending = await _pending()
+        ..add({'id': card.id, 'card': updated.toUpdate(), 'grade': grade.index, 'at': at});
+      await OfflineStore.put(_pendingKey, pending);
+      final cached = await OfflineStore.get('$_uid/cards');
+      if (cached is List) {
+        await OfflineStore.put('$_uid/cards', [
+          for (final r in cached)
+            if (r is Map && r['id'] == card.id) {...r, ...updated.toUpdate()} else r,
+        ]);
+      }
+    }
     return updated;
   }
 
@@ -115,11 +205,14 @@ class Repository {
   /// The last 90 days of sessions, enough for every chart and the streak.
   Future<List<StudySession>> recentSessions() async {
     final since = DateTime.now().subtract(const Duration(days: 90));
-    final rows = await _db
-        .from('study_sessions')
-        .select()
-        .gte('started_at', since.toUtc().toIso8601String())
-        .order('started_at', ascending: false);
+    final rows = await _rows(
+      'sessions',
+      () => _db
+          .from('study_sessions')
+          .select()
+          .gte('started_at', since.toUtc().toIso8601String())
+          .order('started_at', ascending: false),
+    );
     return rows.map((r) => StudySession.fromMap(r)).toList();
   }
 
@@ -139,11 +232,14 @@ class Repository {
   // ------------------------------------------------------- الجدول / schedule
 
   Future<List<ScheduleEntry>> scheduleEntries() async {
-    final rows = await _db
-        .from('schedule_entries')
-        .select()
-        .order('weekday', ascending: true)
-        .order('start_minutes', ascending: true);
+    final rows = await _rows(
+      'schedule',
+      () => _db
+          .from('schedule_entries')
+          .select()
+          .order('weekday', ascending: true)
+          .order('start_minutes', ascending: true),
+    );
     return rows.map<ScheduleEntry>(ScheduleEntry.fromMap).toList();
   }
 
@@ -169,10 +265,10 @@ class Repository {
       _db.from('schedule_entries').delete().eq('user_id', _uid);
 
   Future<List<StyleSample>> styleSamples() async {
-    final rows = await _db
-        .from('style_samples')
-        .select()
-        .order('created_at', ascending: false);
+    final rows = await _rows(
+      'style_samples',
+      () => _db.from('style_samples').select().order('created_at', ascending: false),
+    );
     return rows.map((r) => StyleSample.fromMap(r)).toList();
   }
 
@@ -189,7 +285,7 @@ class Repository {
   /// بيرجّع بروفايلات الشكل مفهرسة بالمادة (المفتاح null = البروفايل العام).
   /// Returns look profiles keyed by subject; a null key is the general one.
   Future<Map<String?, Map<String, dynamic>>> styleProfiles() async {
-    final rows = await _db.from('style_profiles').select();
+    final rows = await _rows('style_profiles', () => _db.from('style_profiles').select());
     return {
       for (final r in rows)
         r['subject_id'] as String?: (r['profile'] as Map).cast<String, dynamic>(),

@@ -31,13 +31,60 @@ self.addEventListener("activate", (event) => {
 // Pass every request straight through — except a file shared from another
 // app (the Android share sheet), which arrives here as a POST to
 // "/share-target" with no real page to answer it.
+const SHELL_CACHE = "app-shell-v1";
+
+async function networkFirst(request) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const response = await fetch(request);
+    if (response.ok || response.type === "opaque") cache.put(request, response.clone());
+    return response;
+  } catch (e) {
+    const saved = await cache.match(request, { ignoreSearch: request.mode === "navigate" });
+    if (saved) return saved;
+    throw e;
+  }
+}
+
+async function cacheFirst(request) {
+  const cache = await caches.open(SHELL_CACHE);
+  const saved = await cache.match(request);
+  if (saved) return saved;
+  const response = await fetch(request);
+  if (response.ok || response.type === "opaque") cache.put(request, response.clone());
+  return response;
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method === "POST" && url.pathname.endsWith("/share-target")) {
     event.respondWith(handleShareTarget(event.request));
     return;
   }
-  event.respondWith(fetch(event.request));
+  if (event.request.method !== "GET") return;
+
+  // ملفات التطبيق نفسه (والخط ومحرك الرسم من جوجل): الشبكة الأول عشان
+  // التحديثات توصل، والنسخة المحفوظة لو مفيش نت — كده التطبيق بيفتح أوفلاين.
+  // The app's own files (plus Google's fonts and rendering engine): network
+  // first so updates arrive, the saved copy when offline — so the app opens
+  // without a connection.
+  if (url.origin === self.location.origin && !url.pathname.startsWith("/__offline__/")) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+  if (/(^|\.)gstatic\.com$|^fonts\.googleapis\.com$/.test(url.hostname)) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+  // صور التلخيص من ويكيميديا ما بتتغيرش، فالمحفوظة الأول.
+  // Summary pictures from Wikimedia never change, so the saved one first.
+  if (url.hostname === "upload.wikimedia.org") {
+    event.respondWith(cacheFirst(event.request));
+    return;
+  }
+  // الباقي (Supabase، جوجل) بيعدّي زي ما هو — بياناته بتتحفظ من جوه التطبيق.
+  // Everything else (Supabase, Google) passes through; its data is saved
+  // from inside the app.
 });
 
 // بيدّي الملف المشارك مكان مؤقت (Cache Storage، دقيقة أو اتنين بالكتير) وبعدين
