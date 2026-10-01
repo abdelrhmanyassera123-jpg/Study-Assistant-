@@ -43,28 +43,42 @@ function json(body: unknown, status = 200): Response {
 /// بيتأكد إن اللي بينادي مستخدم مسجّل دخول فعلاً، مش الـ anon key.
 /// Confirms the caller is a signed-in user, not the anon key.
 ///
-/// تحقق Supabase الافتراضي بيقبل أي JWT موقّع من المشروع — والـ anon key
-/// واحد منهم، وهو عام في كود الواجهة. من غير الفحص ده أي حد يفتح الموقع
-/// يقدر يستهلك حصة Gemini. الإمضاء اتفحص قبل ما نوصل هنا، فقراءة الحمولة كفاية.
-/// Supabase's built-in check accepts any JWT the project signed — and the anon
-/// key is one of those, shipped publicly in the client. Without this, anyone
-/// who opens the site could burn the Gemini quota. The signature is already
-/// verified upstream, so reading the payload is enough.
-function isSignedInUser(req: Request): boolean {
-  const header = req.headers.get("Authorization") ?? "";
-  const token = header.replace(/^Bearer\s+/i, "");
-  const payloadPart = token.split(".")[1];
-  if (!payloadPart) return false;
+/// الفنكشن منشورة بـ --no-verify-jwt: بوابة Supabase كانت بترفض مفتاح الخدمة
+/// اللي lecture-worker بيبعته ("Invalid JWT")، فالتلخيص في الخلفية كان بيقع
+/// بـ 401. فالتحقق بقى هنا: Supabase نفسها بتقول التوكن ده لمين (الـ anon key
+/// مالوش مستخدم فبيترفض)، والنتيجة بتتحفظ دقيقة عشان كل نداء ما يدفعش رحلة زيادة.
+/// Deployed with --no-verify-jwt: Supabase's gateway rejected the service key
+/// lecture-worker sends ("Invalid JWT"), so background summaries failed with
+/// 401. Verification therefore lives here: Supabase itself says whom the
+/// token belongs to (the anon key has no user, so it is refused), and the
+/// answer is kept for a minute so each call does not pay an extra trip.
+const verifiedTokens = new Map<string, { id: string; until: number }>();
 
+async function signedInUser(req: Request): Promise<string | null> {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!/^Bearer\s+\S+/i.test(auth)) return null;
+
+  const hit = verifiedTokens.get(auth);
+  if (hit && hit.until > Date.now()) return hit.id;
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !anonKey) return null;
   try {
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const claims = JSON.parse(atob(padded.padEnd(
-      padded.length + ((4 - (padded.length % 4)) % 4),
-      "=",
-    )));
-    return claims.role === "authenticated" && typeof claims.sub === "string";
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: anonKey, Authorization: auth },
+    });
+    if (!res.ok) {
+      await res.text();
+      return null;
+    }
+    const user = await res.json();
+    if (typeof user?.id !== "string") return null;
+    if (verifiedTokens.size > 500) verifiedTokens.clear();
+    verifiedTokens.set(auth, { id: user.id, until: Date.now() + 60_000 });
+    return user.id;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -96,19 +110,26 @@ function workerUser(req: Request): string | null {
 async function personalApiKey(req: Request): Promise<string | null> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const auth = req.headers.get("Authorization");
-  if (!supabaseUrl || !anonKey || !auth) return null;
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!supabaseUrl || !anonKey) return null;
 
   // العامل معاه مفتاح الخدمة، فالـ RLS مش هتحصر الصف — بنفلتر بالـ id صريح.
   // The worker carries the service key, so RLS will not scope the row; filter
   // by id explicitly.
   const actingFor = workerUser(req);
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const url = actingFor
     ? `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&user_id=eq.${actingFor}&limit=1`
     : `${supabaseUrl}/rest/v1/user_api_keys?select=gemini_api_key&limit=1`;
+  // العامل بيقرا بمفتاح الخدمة بتاع الفنكشن نفسها، مش باللي جاي في الطلب.
+  // The worker reads with this function's own service key, not the one the
+  // request carried.
+  const headers = actingFor
+    ? { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+    : { apikey: anonKey, Authorization: auth };
 
   try {
-    const res = await fetch(url, { headers: { apikey: anonKey, Authorization: auth } });
+    const res = await fetch(url, { headers });
     if (!res.ok) return null;
     const rows = await res.json();
     const key = rows?.[0]?.gemini_api_key;
@@ -972,7 +993,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "POST only" }, 405);
   }
 
-  if (!isSignedInUser(req) && !workerUser(req)) {
+  if (!workerUser(req) && !(await signedInUser(req))) {
     return json({ error: "لازم تكون مسجّل دخول." }, 401);
   }
 

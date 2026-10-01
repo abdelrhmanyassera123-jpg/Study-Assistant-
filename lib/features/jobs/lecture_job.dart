@@ -247,7 +247,18 @@ class LectureJobs {
     return out;
   }
 
-  Future<void> delete(String id) => _db.from('lecture_jobs').delete().eq('id', id);
+  /// بيمسح الشغل وملفاته من التخزين (الصوت والسلايدات).
+  /// Deletes the job and its files in storage (audio and slides).
+  Future<void> delete(String id) async {
+    await _db.from('lecture_jobs').delete().eq('id', id);
+    try {
+      final folder = '$_uid/$id';
+      final files = await _db.storage.from('lectures').list(path: folder);
+      if (files.isNotEmpty) {
+        await _db.storage.from('lectures').remove([for (final f in files) '$folder/${f.name}']);
+      }
+    } catch (_) {}
+  }
 }
 
 final lectureJobsProvider = Provider<LectureJobs>((ref) {

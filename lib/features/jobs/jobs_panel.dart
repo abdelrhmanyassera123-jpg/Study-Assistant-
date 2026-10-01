@@ -133,25 +133,32 @@ class _JobRow extends ConsumerWidget {
         overflow: TextOverflow.ellipsis,
       ),
       onTap: job.isDone ? () => openJobResult(context, job.id) : null,
-      trailing: job.isFailed
-          ? IconButton(
+      // المسح متاح دايمًا — حتى اللي فشل أو اللي لسه شغال (بيلغيه)، عشان
+      // القايمة ما تفضلش شايلة حاجة مالهاش لازمة.
+      // Removing is always available — even a failed or still-running one
+      // (which cancels it), so the list never keeps things nobody wants.
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (job.isFailed)
+            IconButton(
               tooltip: l.retry,
               icon: const Icon(Icons.refresh_rounded),
               onPressed: () async {
                 await ref.read(lectureJobsProvider).retry(job.id);
                 ref.invalidate(recentJobsProvider);
               },
-            )
-          : job.isDone
-              ? IconButton(
-                  tooltip: l.delete,
-                  icon: const Icon(Icons.close_rounded, size: 19),
-                  onPressed: () async {
-                    await ref.read(lectureJobsProvider).delete(job.id);
-                    ref.invalidate(recentJobsProvider);
-                  },
-                )
-              : null,
+            ),
+          IconButton(
+            tooltip: job.isPending ? l.cancel : l.delete,
+            icon: const Icon(Icons.close_rounded, size: 19),
+            onPressed: () async {
+              await ref.read(lectureJobsProvider).delete(job.id);
+              ref.invalidate(recentJobsProvider);
+            },
+          ),
+        ],
+      ),
     );
   }
 }

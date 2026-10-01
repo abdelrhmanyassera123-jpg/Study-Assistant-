@@ -681,3 +681,9 @@ test/                              143 اختبار: SM-2، الإحصائيات
 - **أي كود فيه `package:web` أو `dart:js_interop` لازم يبقى ورا import شرطي**
   (زي `offline_store.dart`) لو حاجة الاختبارات بتستوردها بتوصله — غير كده
   الاختبار ما بيتحمّلش خالص على الـ VM.
+- **`summarize` بتتنشر بـ `--no-verify-jwt` من دلوقتي:**
+  `npx supabase functions deploy summarize --no-verify-jwt --use-api`. بوابة
+  Supabase كانت بترفض مفتاح الخدمة اللي `lecture-worker` بيبعته ("Invalid JWT")
+  فالتلخيص في الخلفية كان بيقع بـ "upload 401". التحقق بقى جوه الفنكشن
+  (`signedInUser` بتسأل `/auth/v1/user`). لو اتنشرت من غير العلامة، العامل
+  هيقع تاني.
