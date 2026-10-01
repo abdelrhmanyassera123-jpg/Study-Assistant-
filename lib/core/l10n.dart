@@ -709,7 +709,8 @@ class AppL10n {
     return '$n كلمة';
   }
 
-  String get supportedFiles => _('pdf · pptx · docx · txt · md', 'pdf · pptx · docx · txt · md');
+  String get supportedFiles =>
+      _('pdf · pptx · docx · txt · md · صور', 'pdf · pptx · docx · txt · md · images');
   String get orPasteText => _('أو الزق النص', 'or paste the text');
   String get lectureText => _('نص المحاضرة', 'Lecture text');
   String get unsupportedFileType =>
@@ -983,6 +984,19 @@ class AppL10n {
   String get planRestDay => _('مفيش مذاكرة في الخطة النهاردة — راحة.', 'Nothing planned today — rest.');
   String get startFocus => _('ابدأ مؤقت المذاكرة', 'Start the focus timer');
   String get recordIt => _('سجّلها', 'Record it');
+  String sharedAdded(int files, bool withText) {
+    if (!isAr) {
+      return [
+        if (files > 0) '$files file${files == 1 ? '' : 's'} added',
+        if (withText) 'shared text added',
+      ].join(' · ');
+    }
+    return [
+      if (files == 1) 'اتضاف الملف اللي شاركته',
+      if (files > 1) 'اتضافوا $files ملفات من المشاركة',
+      if (withText) 'والنص اتحط في خانة المحاضرة',
+    ].join(' · ');
+  }
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

@@ -87,7 +87,7 @@ self.addEventListener("fetch", (event) => {
   // from inside the app.
 });
 
-// بيدّي الملف المشارك مكان مؤقت (Cache Storage، دقيقة أو اتنين بالكتير) وبعدين
+// بيدّي الملفات المشاركة مكان مؤقت (Cache Storage، دقيقة أو اتنين بالكتير) وبعدين
 // بيحوّل لصفحة التطبيق العادية بـ ?shared=1 — الصفحة نفسها هي اللي بتقراه من
 // هناك وتمسحه. لازم يرجّع تحويل (redirect) مش رد مباشر: المتصفح بيتنقّل
 // لعنوان الـ POST ده، ومفيش HTML حقيقي نرسمه هنا.
@@ -99,23 +99,42 @@ self.addEventListener("fetch", (event) => {
 async function handleShareTarget(request) {
   try {
     const formData = await request.formData();
-    const file = formData.get("file");
-    if (file) {
-      const cache = await caches.open("share-target-cache");
+    const cache = await caches.open("share-target-cache");
+    // مشاركة قديمة ما اتقرتش ما تتخلطش بالجديدة.
+    // An old share that was never read must not mix with the new one.
+    for (const key of await cache.keys()) await cache.delete(key);
+
+    // كل الملفات مش أول واحد بس — ممكن تشارك تسجيل وسلايداته مع بعض.
+    // Every file, not just the first — a recording and its slides can be
+    // shared together.
+    const files = formData.getAll("file").filter((f) => f && typeof f !== "string");
+    for (let i = 0; i < files.length; i++) {
       await cache.put(
-        "/shared-file",
-        new Response(file, {
+        `/shared-file/${i}`,
+        new Response(files[i], {
           headers: {
-            "Content-Type": file.type || "application/octet-stream",
-            "X-File-Name": encodeURIComponent(file.name || "shared-file"),
+            "Content-Type": files[i].type || "application/octet-stream",
+            "X-File-Name": encodeURIComponent(files[i].name || "shared-file"),
           },
         }),
       );
     }
+
+    // نص أو لينك متشارك (من واتساب، كروم، ...) بيروح لخانة نص المحاضرة.
+    // Shared text or a link (from WhatsApp, Chrome, ...) goes to the lecture
+    // text box.
+    const text = ["title", "text", "url"]
+      .map((k) => formData.get(k))
+      .filter((v) => typeof v === "string" && v.trim())
+      .join("\n");
+    await cache.put(
+      "/shared-meta",
+      new Response(JSON.stringify({ count: files.length, text })),
+    );
   } catch (e) {
-    // فشل قراءة الملف مش سبب يوقّف التحويل — الصفحة هتلاقي مفيش ملف وتتجاهله.
+    // فشل القراية مش سبب يوقّف التحويل — الصفحة هتلاقي مفيش حاجة وتكمّل.
     // A failed read is no reason to block the redirect — the page will find
-    // no file and move on.
+    // nothing and carry on.
   }
   return Response.redirect("./?shared=1", 303);
 }

@@ -20,6 +20,7 @@ import 'audio_clip.dart';
 import 'audio_input.dart';
 import 'document_text.dart';
 import 'file_input.dart';
+import 'image_shrink.dart';
 import 'model_settings_sheet.dart';
 import 'model_usage.dart';
 import 'style_profile.dart';
@@ -102,8 +103,20 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     // hand.
     final shared = SharedFile.take();
     if (shared != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _addPickedFile(shared);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        if (shared.text.isNotEmpty) {
+          final existing = _lecture.text.trim();
+          setState(() => _lecture.text =
+              existing.isEmpty ? shared.text : '$existing\n\n${shared.text}');
+        }
+        var added = 0;
+        for (final file in shared.files) {
+          if (await _addPickedFile(file)) added++;
+        }
+        if (mounted && (added > 0 || shared.text.isNotEmpty)) {
+          showSnack(context, context.l.sharedAdded(added, shared.text.isNotEmpty));
+        }
       });
     }
 
@@ -257,18 +270,22 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     // instead of a button that looks dead.
     try {
       final files = await pickLocalFiles(
-        extensions: [...supportedDocumentExtensions, ...supportedAudioExtensions],
+        extensions: [
+          ...supportedDocumentExtensions,
+          ...supportedAudioExtensions,
+          ...imageExtensions,
+        ],
         // على أندرويد الفلتر بالامتداد لوحده بيخفي ملفات الـ m4a من الاختيار
         // لأن النظام بيترجمه لنوع مختلف عن اللي مسجّل بيه الملف.
         // On Android, filtering by extension alone hides m4a files from the
         // picker: the system maps it to a type other than the one the file
         // was saved with.
-        mimeTypes: const ['audio/*'],
+        mimeTypes: const ['audio/*', 'image/*'],
       );
       if (files.isEmpty || !mounted) return;
 
       for (final file in files) {
-        _addPickedFile(file);
+        await _addPickedFile(file);
       }
     } on UnsupportedDocumentException {
       if (mounted) showSnack(context, context.l.unsupportedFileType);
@@ -281,9 +298,32 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   /// نوعه — صوت، PDF، أو نص يتستخرج.
   /// Routes a file (whether hand-picked or arriving via the OS share sheet)
   /// to the right path by type — audio, PDF, or extractable text.
-  void _addPickedFile(PickedFile file) {
+  ///
+  /// بيرجّع false لو النوع مش مدعوم — بعد ما يقول للمستخدم، بدل ما يرمي خطأ
+  /// يوقّع الشاشة (الملف ممكن يكون جاي من مشاركة من أي تطبيق).
+  /// Returns false for an unsupported type, after telling the user, instead
+  /// of throwing and breaking the screen (the file may come from a share in
+  /// any app).
+  Future<bool> _addPickedFile(PickedFile file) async {
     if (isAudioFile(file.name)) {
       _addAudioFile(file);
+    } else if (isImageFile(file.name)) {
+      // الصورة بتصغر الأول: صورة موبايل 5 ميجا ما تفرقش في القراية عن نص ميجا.
+      // The picture is shrunk first: a 5 MB phone photo reads no better than
+      // half a megabyte.
+      var ready = file;
+      try {
+        ready = await shrinkImage(file);
+      } catch (_) {}
+      if (!mounted) return false;
+      setState(() {
+        _docs.add(LectureFile(
+          name: ready.name,
+          mimeType: ready.mimeType.startsWith('image/') ? ready.mimeType : 'image/jpeg',
+          bytes: ready.bytes,
+        ));
+        _error = null;
+      });
     } else if (isModelReadable(file.name)) {
       // الـ PDF بيتبعت للموديل زي ما هو — مش بنحاول نفك نصه في المتصفح.
       // PDFs go to the model untouched; we don't try to unpack them here.
@@ -295,9 +335,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         ));
         _error = null;
       });
-    } else {
+    } else if (isExtractable(file.name)) {
       _addExtracted(file);
+    } else {
+      if (mounted) showSnack(context, '${context.l.unsupportedFileType} (${file.name})');
+      return false;
     }
+    return true;
   }
 
   void _addAudioFile(PickedFile file) {
@@ -606,6 +650,10 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         'audio/aac' => 'aac',
         'audio/flac' => 'flac',
         'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/heic' => 'heic',
         _ => 'bin',
       };
 
@@ -687,8 +735,12 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   Future<void> _batchUpload() async {
     final l = context.l;
     final picked = await pickLocalFiles(
-      extensions: [...supportedDocumentExtensions, ...supportedAudioExtensions],
-      mimeTypes: const ['audio/*'],
+      extensions: [
+        ...supportedDocumentExtensions,
+        ...supportedAudioExtensions,
+        ...imageExtensions,
+      ],
+      mimeTypes: const ['audio/*', 'image/*'],
     );
     if (picked.isEmpty || !mounted) return;
 
@@ -705,7 +757,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         bytes: f.bytes,
         modified: f.modified,
       );
-      if (!audio && !isModelReadable(f.name)) {
+      if (!audio && !isModelReadable(f.name) && !isImageFile(f.name)) {
         try {
           final doc = extractDocumentText(f.name, f.bytes);
           if (doc.isEmpty) continue;
@@ -931,7 +983,9 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: Insets.sm),
                         child: _SourceRow(
-                          icon: Icons.picture_as_pdf_rounded,
+                          icon: doc.mimeType.startsWith('image/')
+                              ? Icons.image_outlined
+                              : Icons.picture_as_pdf_rounded,
                           title: doc.name,
                           subtitle: '${doc.megabytes.toStringAsFixed(1)} MB',
                           onRemove: _running

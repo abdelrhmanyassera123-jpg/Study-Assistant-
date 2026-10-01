@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:study_assistant/core/app_theme.dart';
 import 'package:study_assistant/core/l10n.dart';
+import 'package:study_assistant/core/share_target.dart';
 import 'package:study_assistant/data/offline_sync.dart';
 import 'package:study_assistant/data/providers.dart';
 import 'package:study_assistant/features/auth/login_page.dart';
@@ -222,9 +223,12 @@ class _FixedSection extends SectionNotifier {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // نفس اللي main() بيعمله، عشان المشاركة من تطبيق تاني تتجرب هنا كمان.
+  // As main() does, so sharing from another app can be tried here too.
+  await SharedFile.init();
 
   final q = Uri.base.queryParameters;
-  final screen = q['screen'] ?? 'dashboard';
+  final screen = SharedFile.hasPending ? 'summarize' : (q['screen'] ?? 'dashboard');
   final lang = q['lang'] ?? 'ar';
   final theme = q['theme'] ?? 'light';
   final scale = double.tryParse(q['scale'] ?? '1') ?? 1.0;

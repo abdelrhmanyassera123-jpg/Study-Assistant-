@@ -69,6 +69,17 @@ const supportedDocumentExtensions = [
   ...modelReadableExtensions,
 ];
 
+/// الصور: صورة سبورة، سلايد، أو صفحة كتاب — الموديل بيقراها بنفسه.
+/// Pictures: a whiteboard, a slide or a book page — the model reads them
+/// itself.
+const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic'];
+
+bool isImageFile(String fileName) =>
+    imageExtensions.contains(fileName.split('.').last.toLowerCase());
+
+bool isExtractable(String fileName) =>
+    extractableExtensions.contains(fileName.split('.').last.toLowerCase());
+
 /// هل الملف ده بيتبعت كملف بدل ما نستخرج نصه؟
 /// Is this file sent as a file rather than text-extracted?
 bool isModelReadable(String fileName) =>

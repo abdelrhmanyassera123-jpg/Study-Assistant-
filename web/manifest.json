@@ -17,15 +17,40 @@
         "params": {
             "title": "title",
             "text": "text",
+            "url": "url",
             "files": [
                 {
                     "name": "file",
                     "accept": [
+                        "*/*",
                         "audio/*",
+                        "video/*",
+                        "image/*",
+                        "text/*",
                         "application/pdf",
-                        ".m4a", ".mp3", ".wav", ".aac", ".ogg", ".opus", ".oga",
-                        ".flac", ".webm", ".mp4", ".aiff",
-                        ".pdf", ".pptx", ".docx", ".txt", ".md"
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        ".m4a",
+                        ".mp3",
+                        ".wav",
+                        ".aac",
+                        ".ogg",
+                        ".opus",
+                        ".oga",
+                        ".flac",
+                        ".webm",
+                        ".mp4",
+                        ".aiff",
+                        ".pdf",
+                        ".pptx",
+                        ".docx",
+                        ".txt",
+                        ".md",
+                        ".jpg",
+                        ".jpeg",
+                        ".png",
+                        ".webp",
+                        ".heic"
                     ]
                 }
             ]
