@@ -28,7 +28,15 @@
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>مساعد المذاكرة · Study Assistant</title>
-  <link rel="manifest" href="manifest.json">
+  <!--
+    use-credentials: كروم بيجيب الـ manifest من غير كوكيز. لو حماية Vercel
+    (Deployment Protection) شغالة، الطلب كان بيرجع صفحة دخول Vercel، فكروم
+    يقول "لا يمكن تثبيت هذا التطبيق" وتظهر أيقونة V بتاعة Vercel.
+    use-credentials: Chrome fetches the manifest without cookies. With Vercel
+    Deployment Protection on, that request got Vercel's login page instead, so
+    Chrome said the app cannot be installed and showed Vercel's V icon.
+  -->
+  <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
   <script src="pdf_pages.js" defer></script>
 
   <style>
