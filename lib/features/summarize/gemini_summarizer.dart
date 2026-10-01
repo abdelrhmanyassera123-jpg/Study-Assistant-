@@ -762,8 +762,8 @@ class GeminiSummarizer implements Summarizer {
   @override
   Future<List<ExamQuestion>> makeExam({
     required String source,
-    int choiceCount = 6,
-    int writtenCount = 2,
+    int total = 10,
+    String pastExams = '',
   }) async {
     _requireSignIn();
     _requireText(source);
@@ -774,8 +774,8 @@ class GeminiSummarizer implements Summarizer {
       'system': StudyAiPrompts.examSystem,
       'prompt': StudyAiPrompts.examPrompt(
         source: _capped(source),
-        choiceCount: choiceCount,
-        writtenCount: writtenCount,
+        total: total,
+        pastExams: pastExams,
       ),
     });
 

@@ -373,8 +373,8 @@ abstract class Summarizer {
   /// Builds exam questions from the material.
   Future<List<ExamQuestion>> makeExam({
     required String source,
-    int choiceCount,
-    int writtenCount,
+    int total,
+    String pastExams,
   });
 
   /// بيصحح الإجابات المقالية ويقول الضعف فين.
