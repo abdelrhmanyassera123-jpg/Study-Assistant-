@@ -15,6 +15,8 @@
 // it isn't deployed with --no-verify-jwt), so anonymous callers never get in.
 // =====================================================================
 
+import { parseModelJson } from "../_shared/model_json.ts";
+
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_UPLOAD = "https://generativelanguage.googleapis.com/upload/v1beta";
 
@@ -766,11 +768,16 @@ function generateJson(
         }
 
         try {
+          // parseModelJson بيصلّح شرطات LaTeX المايلة قبل القراية — شوف
+          // _shared/model_json.ts.
+          // parseModelJson repairs LaTeX backslashes before reading — see
+          // _shared/model_json.ts.
+          //
           // بنفك الترميز هنا عشان أي رد مش JSON يبان كخطأ واضح بدل ما يوصل
           // للتطبيق ويكسره وهو بيحاول يقراه.
           // Parsed here so a non-JSON reply surfaces as a clear error instead
           // of reaching the app and breaking it mid-read.
-          emit({ result: JSON.parse(text), model });
+          emit({ result: parseModelJson(text), model });
         } catch {
           emit({
             error: "الموديل رجّع رد مش JSON.",
