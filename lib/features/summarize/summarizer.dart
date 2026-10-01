@@ -441,6 +441,14 @@ abstract class Summarizer {
   /// that were said but left out.
   Future<List<String>> findMissed({required String source, required String summary});
 
+  /// بيقرا امتحان قديم ويرجّع أسئلته، كل واحد مربوط بمحاضرة من [lectures].
+  /// Reads an old exam and returns its questions, each tied to a lecture from
+  /// [lectures].
+  Future<List<Map<String, dynamic>>> extractPastExam({
+    required List<LectureFile> files,
+    required List<String> lectures,
+  });
+
   /// الموديلات المتاحة — بتستخدم كمان كفحص للاتصال.
   /// Available models; doubles as the connectivity check.
   Future<List<String>> listModels();

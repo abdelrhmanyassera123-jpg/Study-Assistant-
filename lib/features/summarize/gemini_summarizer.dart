@@ -650,6 +650,47 @@ class GeminiSummarizer implements Summarizer {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> extractPastExam({
+    required List<LectureFile> files,
+    required List<String> lectures,
+  }) async {
+    _requireSignIn();
+    _requireFitting(files);
+    if (files.isEmpty) {
+      throw const SummarizerException('اختار صور أو PDF للامتحان الأول.');
+    }
+
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
+    }
+
+    final result = await _postJson({
+      'action': 'json',
+      'model': config.requestedModel,
+      'system': StudyAiPrompts.pastExamSystem,
+      'prompt': StudyAiPrompts.pastExamPrompt(lectures),
+      'files': _fileParts(inline, uploads),
+      // قراية ورقة امتحان متصورة محتاجة دقة أكتر من السرعة.
+      // Reading a photographed exam paper needs accuracy more than speed.
+      'prefer_pro': true,
+    });
+    final rows = decodeModelJson(result)?['questions'];
+    if (rows is! List) {
+      throw const SummarizerException('الامتحان رجع بشكل مش مفهوم.');
+    }
+    final questions = [
+      for (final r in rows)
+        if (r is Map) r.map((k, v) => MapEntry('$k', v)),
+    ];
+    if (questions.isEmpty) {
+      throw const SummarizerException('ملقتش أسئلة في الصور دي — جرّب صورة أوضح.');
+    }
+    return questions;
+  }
+
+  @override
   Future<List<SummaryBlock>> reworkBlock({
     required SummaryPage page,
     required SummaryBlock block,

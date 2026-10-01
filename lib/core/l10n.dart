@@ -958,6 +958,27 @@ class AppL10n {
   String get picturesNone => _('بدون صور', 'None');
   String get picturesWeb => _('توضيحية', 'Illustrations');
   String get picturesSlides => _('+ السلايدات', '+ Slides');
+  String get pastExams => _('امتحانات السنين اللي فاتت', 'Past exams');
+  String pastExamsCount(int n) => isAr ? 'امتحانات السنين اللي فاتت ($n)' : 'Past exams ($n)';
+  String get pastExamsHint => _(
+        'صوّر أو ارفع امتحانات قديمة للمادة. هيطلّع كل سؤال، يربطه بالمحاضرة بتاعته، ويقولك إيه اللي بيتكرر كل سنة.',
+        'Photograph or upload old exams. Each question is extracted, tied to its lecture, and repeats are counted.',
+      );
+  String get addPastExam => _('ضيف امتحان قديم (صور أو PDF)', 'Add an old exam (photos or PDF)');
+  String get readingPastExam => _('بيقرا أسئلة الامتحان...', 'Reading the exam...');
+  String pastExamDefaultLabel(int n) => isAr ? 'امتحان $n' : 'Exam $n';
+  String get pastExamLabelTitle => _('اسم الامتحان', 'Exam name');
+  String get pastExamLabelHint => _('مثلًا: فاينل 2024', 'e.g. Final 2024');
+  String get pastExamRead => _('اقرا الأسئلة', 'Read the questions');
+  String pastExamAdded(int n) => isAr ? 'اتضاف $n سؤال.' : '$n questions added.';
+  String get mockLikePastExams => _('امتحان تجريبي بنفس شكل الامتحانات دي', 'Mock exam in the same shape');
+  String get hotTopics => _('الأكتر تكرارًا', 'Most recurring');
+  String askedInExams(int n, int total) => isAr ? 'جه في $n من $total امتحان' : 'In $n of $total exams';
+  String questionsCount(int n) => isAr ? '$n سؤال' : '$n questions';
+  String get choiceQuestion => _('اختياري', 'Multiple choice');
+  String get writtenQuestion => _('كتابي', 'Written');
+  String get answerLabel => _('الإجابة', 'Answer');
+  String get askWholeSubject => _('اسأل في المادة كلها', 'Ask about the whole subject');
   String get formatLandscape => _('A4 بالعرض', 'A4 landscape');
   String get formatPortrait => _('A4 بالطول', 'A4 portrait');
   String get formatFlowing => _('صفحة طويلة', 'One long page');

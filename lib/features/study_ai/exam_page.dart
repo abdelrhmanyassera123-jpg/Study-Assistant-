@@ -13,10 +13,11 @@ Future<void> openExamPage(
   BuildContext context, {
   required String title,
   required String source,
+  String pastExams = '',
 }) =>
     Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ExamPage(title: title, source: source),
+        builder: (_) => ExamPage(title: title, source: source, pastExams: pastExams),
       ),
     );
 
@@ -29,10 +30,19 @@ Future<void> openExamPage(
 /// question was made, so a second call buys nothing. Only the written answers
 /// go to the model.
 class ExamPage extends ConsumerStatefulWidget {
-  const ExamPage({super.key, required this.title, required this.source});
+  const ExamPage({
+    super.key,
+    required this.title,
+    required this.source,
+    this.pastExams = '',
+  });
 
   final String title;
   final String source;
+
+  /// أسئلة امتحانات قديمة — الامتحان بيمشي على شكلها ونوعها.
+  /// Questions from old exams; the mock follows their shape and type.
+  final String pastExams;
 
   @override
   ConsumerState<ExamPage> createState() => _ExamPageState();
@@ -72,7 +82,10 @@ class _ExamPageState extends ConsumerState<ExamPage> {
     });
     try {
       final questions =
-          await ref.read(activeSummarizerProvider).makeExam(source: widget.source);
+          await ref.read(activeSummarizerProvider).makeExam(
+                source: widget.source,
+                pastExams: widget.pastExams,
+              );
       if (!mounted) return;
       setState(() {
         _questions = questions;

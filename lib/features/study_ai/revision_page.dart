@@ -13,6 +13,9 @@ import '../summarize/styled_result.dart';
 import '../summarize/summarizer.dart';
 import '../summarize/summarizer_provider.dart';
 import '../summarize/summary_images.dart';
+import '../past_exams/past_exam.dart';
+import '../past_exams/past_exams_page.dart';
+import 'ask_page.dart';
 import 'exam_page.dart';
 
 Future<void> openRevisionPage(BuildContext context, Subject subject) =>
@@ -93,6 +96,14 @@ class _RevisionPageState extends ConsumerState<RevisionPage> {
           'وخلّي كل محاضرة عنوان، وركّز على التعريفات والقوانين والأرقام '
           'والمقارنات اللي بتيجي في الامتحان، وحط جدول/مقارنة لما ينفع، '
           'وفي الآخر بلوك highlight بأهم 5 نقط في المادة كلها.)');
+    final past = ref.read(pastQuestionsProvider(widget.subject.id)).value ?? const [];
+    final hot = hotTopics(past).where((t) => t.exams > 1).take(10).toList();
+    if (hot.isNotEmpty) {
+      brief
+        ..writeln()
+        ..writeln('(المواضيع دي بتتكرر في امتحانات السنين اللي فاتت — خليها واضحة ومعلّمة:)')
+        ..writeln(hot.map((t) => '- ${t.topic} (في ${t.exams} امتحانات)').join('\n'));
+    }
     if (weak.isNotEmpty) {
       brief
         ..writeln()
@@ -145,6 +156,8 @@ class _RevisionPageState extends ConsumerState<RevisionPage> {
     ref.watch(cardsProvider);
     final notes = _notes;
     final weak = _weakCards;
+    final past = ref.watch(pastQuestionsProvider(widget.subject.id)).value ?? const [];
+    final pastCount = past.map((q) => q.examLabel).toSet().length;
     final profiles = ref.watch(styleProfilesProvider).value ?? const {};
     final raw = profiles[widget.subject.id] ?? profiles[null];
 
@@ -173,10 +186,25 @@ class _RevisionPageState extends ConsumerState<RevisionPage> {
                     label: Text(_page == null ? l.makeRevisionPack : l.remakeRevisionPack),
                   ),
                   OutlinedButton.icon(
+                    onPressed: () => openPastExams(context, widget.subject),
+                    icon: const Icon(Icons.history_edu_outlined, size: 19),
+                    label: Text(l.pastExamsCount(pastCount)),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => openAskPage(
+                      context,
+                      title: widget.subject.name,
+                      source: _source,
+                    ),
+                    icon: const Icon(Icons.forum_outlined, size: 19),
+                    label: Text(l.askWholeSubject),
+                  ),
+                  OutlinedButton.icon(
                     onPressed: () => openExamPage(
                       context,
                       title: widget.subject.name,
                       source: _source,
+                      pastExams: pastExamsText(past),
                     ),
                     icon: const Icon(Icons.quiz_outlined, size: 19),
                     label: Text(l.subjectMockExam),
