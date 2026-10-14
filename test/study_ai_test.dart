@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:study_assistant/features/study_ai/study_ai.dart';
+import 'package:study_assistant/features/summarize/style_profile.dart';
+import 'package:study_assistant/features/summarize/summarizer.dart';
 
 void main() {
   group('generated cards', () {
@@ -176,46 +178,62 @@ void main() {
     });
   });
 
-  group('explain and review prompts', () {
+  group('explain and review pages', () {
+    const profile = StyleProfile();
+
     // الشرح بيضيف أمثلة من برّه، فلازم تتعلّم — وإلا الطالب يكتبها في
     // الامتحان على إنها من المنهج.
     // The explanation adds outside examples, so they must be marked, or the
     // student writes them in the exam as syllabus.
     test('outside examples in an explanation are marked', () {
       for (final level in ExplainLevel.values) {
-        final system = StudyAiPrompts.explainSystem(level, arabic: true);
+        final system = VisualPrompts.blocksSystem(
+          profile,
+          kind: StudyOutput.explain,
+          level: level,
+        );
         expect(system, contains('💡 للتوضيح'));
-        expect(system, contains('من المحتوى بس'));
+        expect(system, contains('من المحاضرة بس'));
+        expect(system, isNot(contains('متخترعش معلومة ولا مثال')));
       }
     });
 
     test('each level asks for a different depth', () {
       final texts = {
-        for (final level in ExplainLevel.values)
-          StudyAiPrompts.explainSystem(level, arabic: true),
+        for (final level in ExplainLevel.values) StudyAiPrompts.explainRules(level),
       };
       expect(texts, hasLength(ExplainLevel.values.length));
     });
 
-    test('the review sheet stays on the material, in the app language', () {
-      final ar = StudyAiPrompts.reviewSystem(arabic: true);
-      final en = StudyAiPrompts.reviewSystem(arabic: false);
-      expect(ar, contains('المصدر الوحيد'));
-      expect(ar, contains('## أسئلة متوقعة'));
-      expect(en, contains('## Likely questions'));
+    // التلاتة بيترسموا ورق: نفس شكل الـ JSON ونفس البلوكات.
+    // All three are drawn as paper: the same JSON shape and the same blocks.
+    test('every kind is answered in the same page blocks', () {
+      for (final kind in StudyOutput.values) {
+        final system = VisualPrompts.blocksSystem(profile, kind: kind);
+        expect(system, contains('"blocks"'));
+        expect(system, contains('"diagram"'));
+      }
     });
 
-    test('the lecture prompt carries the text and mentions attached files', () {
-      final both = StudyAiPrompts.lecturePrompt(
-        lectureText: 'الجهد = التيار × المقاومة',
-        hasFile: true,
-        task: 'اشرح',
-      );
-      expect(both, contains('الجهد = التيار × المقاومة'));
-      expect(both, contains('الملفات المرفقة'));
+    test('the review keeps to the material and ends on likely questions', () {
+      final system = VisualPrompts.blocksSystem(profile, kind: StudyOutput.review);
+      expect(system, contains('أسئلة متوقعة'));
+      expect(system, contains('متخترعش معلومة ولا مثال'));
+    });
 
-      final fileOnly = StudyAiPrompts.lecturePrompt(lectureText: '', hasFile: true, task: 'اشرح');
-      expect(fileOnly, isNot(contains('### محتوى المحاضرة')));
+    test('the summary prompt is unchanged by the new kinds', () {
+      final system = VisualPrompts.blocksSystem(profile);
+      expect(system, startsWith('أنت بتلخص'));
+      expect(system, isNot(contains('💡 للتوضيح')));
+    });
+
+    test('the lecture prompt asks for the chosen kind', () {
+      String ask(StudyOutput kind) =>
+          StudyPrompt.build(lectureText: 'قانون أوم', samples: const [], kind: kind);
+      expect(ask(StudyOutput.summary), contains('لخّص'));
+      expect(ask(StudyOutput.explain), contains('اشرح'));
+      expect(ask(StudyOutput.review), contains('ورقة مراجعة'));
+      expect(ask(StudyOutput.explain), contains('قانون أوم'));
     });
   });
 }

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../study_ai/study_ai.dart';
+
 /// الشكل البصري لتلخيصات المستخدم، مستخرج من صور كراسته.
 /// The visual look of the user's summaries, read from photos of their notebook.
 ///
@@ -476,15 +478,29 @@ class VisualPrompts {
       : 'حلّل شكل الـ $pageCount صفحات المرفقة (وصف واحد مشترك) وانقل نص كل '
           'صفحة لوحدها بنفس ترتيبها، ورد بالـ JSON المطلوب.';
 
+  /// الشرح والمراجعة بيترسموا بنفس البلوكات وشكل الكراسة زي التلخيص — اللي
+  /// بيتغير هو المطلوب ([kind]) بس.
+  /// The explanation and the review are drawn with the same blocks and
+  /// notebook look as the summary; only the task ([kind]) changes.
   static String blocksSystem(
     StyleProfile profile, {
     ImageMode images = ImageMode.web,
+    StudyOutput kind = StudyOutput.summary,
+    ExplainLevel level = ExplainLevel.normal,
   }) =>
       '''
-أنت بتلخص محاضرات دراسية بأسلوب طالب معيّن وبشكل صفحته بالظبط.
+${switch (kind) {
+        StudyOutput.summary => 'أنت بتلخص محاضرات دراسية بأسلوب طالب معيّن وبشكل صفحته بالظبط.',
+        StudyOutput.explain => 'أنت مدرّس شاطر بتشرح محاضرة لطالب على ورق بأسلوبه وبشكل صفحته بالظبط.',
+        StudyOutput.review => 'أنت بتعمل ورقة مراجعة لمحاضرة بأسلوب طالب معيّن وبشكل صفحته بالظبط.',
+      }}
 
 ${profile.asInstructions()}
-
+${switch (kind) {
+        StudyOutput.summary => '',
+        StudyOutput.explain => '\n${StudyAiPrompts.explainRules(level)}',
+        StudyOutput.review => '\n${StudyAiPrompts.reviewRules}',
+      }}
 هترد بـ JSON بالشكل ده بالظبط:
 {
   "title": "عنوان الصفحة",
@@ -515,7 +531,7 @@ ${_imageRules(images)}
   أو فكرة ليها فروع، "compare" لمقارنة بين حاجتين أو أكتر (أول عمود فاضي في
   "columns" وأول خانة في كل صف هي وجه المقارنة). الخانات قصيرة: كلمتين لـ 6.
 - color_index رقم من 0 لعدد ألوان الطالب ناقص واحد.
-- المحتوى كله من المحاضرة المعطاة. متخترعش معلومة ولا مثال.
+${kind == StudyOutput.explain ? '- المعلومات كلها من المحاضرة المعطاة. متخترعش معلومة — والأمثلة التوضيحية بس في بلوك "💡 للتوضيح".' : '- المحتوى كله من المحاضرة المعطاة. متخترعش معلومة ولا مثال.'}
 - اكتب بالعربي وبنفس نبرة الطالب.
 - المعادلات اكتبها LaTeX عشان تترسم معادلات حقيقية: جوه السطر بين \$...\$ زي
   \$KE = \\frac{1}{2} m v^2\$، والمعادلة المهمة لوحدها بين \$\$...\$\$. الرموز

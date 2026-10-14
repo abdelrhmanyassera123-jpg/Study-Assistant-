@@ -357,26 +357,6 @@ abstract class Summarizer {
     void Function(int chunk, int totalChunks)? onChunk,
   });
 
-  /// بيشرح المحاضرة كلها بالمستوى المطلوب، والشرح بيوصل وهو بيتكتب.
-  /// Explains the whole lecture at the chosen level, streaming as it writes.
-  ///
-  /// [lectureText] و[files] زي [summarize]: واحد منهم على الأقل.
-  /// [lectureText] and [files] as in [summarize]: at least one of them.
-  Stream<String> explain({
-    String lectureText,
-    List<LectureFile> files,
-    ExplainLevel level,
-    required bool arabic,
-  });
-
-  /// بيعمل ورقة مراجعة سريعة للمحاضرة، وبتوصل وهي بتتكتب.
-  /// Builds a quick revision sheet for the lecture, streaming as it writes.
-  Stream<String> reviewSheet({
-    String lectureText,
-    List<LectureFile> files,
-    required bool arabic,
-  });
-
   /// بيعمل كروت مراجعة من محتوى مذاكرة.
   /// Builds review cards out of study material.
   Future<List<GeneratedCard>> makeCards(String source, {int count});
@@ -434,14 +414,19 @@ abstract class Summarizer {
   /// Reads a photo of the user's notebook: its layout and its written summary.
   Future<StyleAnalysis> analyzeStyle(List<LectureFile> images);
 
-  /// بيلخص ويرجّع بلوكات جاهزة للرسم بدل نص عادي.
-  /// Summarizes into drawable blocks instead of prose.
+  /// بيلخص (أو يشرح أو يعمل مراجعة، حسب [kind]) ويرجّع بلوكات جاهزة للرسم
+  /// بدل نص عادي — التلاتة بيترسموا ورق بشكل كراسة المستخدم.
+  /// Summarizes (or explains, or makes a review, per [kind]) into drawable
+  /// blocks instead of prose; all three are drawn as paper in the user's
+  /// notebook look.
   Future<SummaryPage> summarizeAsPage({
     String lectureText,
     List<LectureFile> files,
     required List<StyleSample> samples,
     required StyleProfile profile,
     ImageMode images,
+    StudyOutput kind,
+    ExplainLevel level,
   });
 
   /// بيعيد كتابة بلوك واحد حسب [instruction] (وسّع، بسّط، ...) ويرجّع
@@ -512,6 +497,7 @@ class StudyPrompt {
     String lectureText = '',
     bool hasFile = false,
     required List<StyleSample> samples,
+    StudyOutput kind = StudyOutput.summary,
   }) {
     final buffer = StringBuffer();
     final text = lectureText.trim();
@@ -534,10 +520,17 @@ class StudyPrompt {
       buffer.writeln();
       buffer.writeln(lectureBody);
       buffer.writeln();
-      buffer.writeln('لخّص المحاضرة دي تلخيص مذاكرة منظم بالعربي.');
+      buffer.writeln(switch (kind) {
+        StudyOutput.summary => 'لخّص المحاضرة دي تلخيص مذاكرة منظم بالعربي.',
+        StudyOutput.explain => 'اشرح المحاضرة دي كلها بالتفصيل بالعربي، بالقواعد.',
+        StudyOutput.review => 'اعمل ورقة مراجعة للمحاضرة دي بالعربي، بالقواعد.',
+      });
       return buffer.toString();
     }
 
+    // في الشرح والمراجعة الأمثلة للنبرة والشكل بس — طولهم ومحتواهم مختلف.
+    // For the explanation and the review the examples set tone and look only;
+    // their length and content differ.
     buffer.writeln('### دي أمثلة من تلخيصاتي أنا — ادرس شكلها وأسلوبها:');
     buffer.writeln();
     for (var i = 0; i < samples.length; i++) {
@@ -553,7 +546,13 @@ class StudyPrompt {
     buffer.writeln();
     buffer.writeln(lectureBody);
     buffer.writeln();
-    buffer.writeln('لخّص المحاضرة الجديدة دي بنفس أسلوبي وشكلي بالظبط.');
+    buffer.writeln(switch (kind) {
+      StudyOutput.summary => 'لخّص المحاضرة الجديدة دي بنفس أسلوبي وشكلي بالظبط.',
+      StudyOutput.explain =>
+        'اشرح المحاضرة الجديدة دي كلها بالتفصيل بالقواعد، بنفس نبرتي وشكل صفحتي.',
+      StudyOutput.review =>
+        'اعمل ورقة مراجعة للمحاضرة الجديدة دي بالقواعد، بنفس نبرتي وشكل صفحتي.',
+    });
 
     return buffer.toString();
   }
