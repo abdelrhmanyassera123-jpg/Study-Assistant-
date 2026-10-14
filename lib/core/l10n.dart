@@ -727,6 +727,18 @@ class AppL10n {
   String get generating => _('بيلخص...', 'Summarizing...');
   String get stopGenerating => _('إيقاف', 'Stop');
   String get theSummary => _('التلخيص', 'Summary');
+  String legacyOfficeFile(String ext) => _(
+        'ملف .$ext ده من صيغة أوفيس القديمة ومينفعش يتفتح هنا. افتحه في باوربوينت/وورد واحفظه pptx أو docx أو PDF (Save As)، أو ارفعه على Google Drive وحمّله PDF.',
+        'This .$ext file is the old Office format and cannot be opened here. Open it in PowerPoint/Word and Save As pptx, docx or PDF.',
+      );
+  String fileUnreadable(String name) => _(
+        'مش قادر أفتح "$name" — ممكن يكون تالف أو مش باوربوينت حقيقي. جرّب تحفظه PDF وترفعه.',
+        'Could not open "$name" — it may be damaged or not a real PowerPoint. Try saving it as PDF.',
+      );
+  String slidesAsPictures(int count) => _(
+        'الشرايح أغلبها صور، فهتتبعت $count صورة للموديل يقراها.',
+        'The slides are mostly pictures, so $count of them go to the model to read.',
+      );
   String get modeSummary => _('تلخيص', 'Summary');
   String get modeExplain => _('شرح', 'Explain');
   String get modeReview => _('مراجعة', 'Review');

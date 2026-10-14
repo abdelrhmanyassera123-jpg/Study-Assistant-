@@ -293,13 +293,15 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         // On Android, filtering by extension alone hides m4a files from the
         // picker: the system maps it to a type other than the one the file
         // was saved with.
-        mimeTypes: const ['audio/*', 'image/*'],
+        mimeTypes: const ['audio/*', 'image/*', ...documentMimeTypes],
       );
       if (files.isEmpty || !mounted) return;
 
       for (final file in files) {
         await _addPickedFile(file);
       }
+    } on LegacyOfficeException catch (e) {
+      if (mounted) showSnack(context, context.l.legacyOfficeFile(e.extension));
     } on UnsupportedDocumentException {
       if (mounted) showSnack(context, context.l.unsupportedFileType);
     } catch (e) {
@@ -349,7 +351,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         _error = null;
       });
     } else if (isExtractable(file.name)) {
-      _addExtracted(file);
+      return _addExtracted(file);
     } else {
       if (mounted) showSnack(context, '${context.l.unsupportedFileType} (${file.name})');
       return false;
@@ -381,11 +383,58 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     });
   }
 
-  void _addExtracted(PickedFile file) {
-    final doc = extractDocumentText(file.name, file.bytes);
+  Future<bool> _addExtracted(PickedFile file) async {
+    final l = context.l;
+    final ExtractedDocument doc;
+    try {
+      doc = extractDocumentText(file.name, file.bytes);
+    } on LegacyOfficeException {
+      rethrow;
+    } on UnsupportedDocumentException {
+      rethrow;
+    } catch (_) {
+      // ZIP بايظ أو ملف متسمّي pptx وهو مش كده — رسالة مفهومة بدل نص
+      // الاستثناء الإنجليزي.
+      // A broken ZIP, or a file named pptx that is not one: a readable
+      // message instead of the exception's English text.
+      if (mounted) showSnack(context, l.fileUnreadable(file.name));
+      return false;
+    }
+
+    // سلايدات أغلبها صور: الصور نفسها بتتبعت للموديل يقراها، والنص القليل
+    // اللي فيها بيروح معاها.
+    // Slides that are mostly pictures: the pictures themselves go to the
+    // model to read, with whatever little text they have alongside.
+    if (doc.mostlyPictures) {
+      final images = <LectureFile>[];
+      for (final image in doc.images) {
+        var ready = PickedFile(name: image.name.split('/').last, bytes: image.bytes, mimeType: image.mimeType);
+        try {
+          ready = await shrinkImage(ready);
+        } catch (_) {}
+        images.add(LectureFile(
+          name: '${file.name} · ${ready.name}',
+          mimeType: ready.mimeType.startsWith('image/') ? ready.mimeType : 'image/jpeg',
+          bytes: ready.bytes,
+        ));
+      }
+      if (!mounted) return false;
+      setState(() {
+        _docs.addAll(images);
+        if (!doc.isEmpty) {
+          final existing = _lecture.text.trim();
+          _lecture.text = existing.isEmpty ? doc.text : '$existing\n\n${doc.text}';
+        }
+        _extracted = doc;
+        _error = null;
+      });
+      showSnack(context, l.slidesAsPictures(images.length));
+      return true;
+    }
+
     if (doc.isEmpty) {
-      showSnack(context, context.l.fileHasNoText);
-      return;
+      if (mounted) showSnack(context, l.fileHasNoText);
+      return false;
     }
     setState(() {
       _extracted = doc;
@@ -396,6 +445,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       _lecture.text = existing.isEmpty ? doc.text : '$existing\n\n${doc.text}';
       _error = null;
     });
+    return true;
   }
 
   // -------------------------------------------------- التفريغ / transcription
@@ -772,7 +822,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         ...supportedAudioExtensions,
         ...imageExtensions,
       ],
-      mimeTypes: const ['audio/*', 'image/*'],
+      mimeTypes: const ['audio/*', 'image/*', ...documentMimeTypes],
     );
     if (picked.isEmpty || !mounted) return;
 

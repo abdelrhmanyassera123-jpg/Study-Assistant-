@@ -149,4 +149,97 @@ void main() {
       );
     });
   });
+
+  group('pptx pictures', () {
+    String rels(List<String> targets) =>
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '${[
+          for (var i = 0; i < targets.length; i++)
+            '<Relationship Id="rId${i + 1}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+                'Target="${targets[i]}"/>',
+        ].join()}'
+        '<Relationship Id="rLayout" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" '
+        'Target="../slideLayouts/slideLayout1.xml"/>'
+        '</Relationships>';
+
+    Uint8List withMedia(Map<String, String> entries, Map<String, List<int>> media) {
+      final archive = Archive();
+      entries.forEach((name, content) => archive.add(ArchiveFile.string(name, content)));
+      media.forEach((name, bytes) => archive.add(ArchiveFile(name, bytes.length, bytes)));
+      return Uint8List.fromList(ZipEncoder().encode(archive));
+    }
+
+    // سلايدات متصورة سكان: مفيش ولا كلمة نص، والمحاضرة كلها جوه الصور.
+    // Scanned slides: not one word of text; the whole lecture is in the images.
+    test('scanned slides hand their pictures over in slide order', () {
+      final bytes = withMedia({
+        'ppt/slides/slide1.xml': slideXml(const []),
+        'ppt/slides/slide2.xml': slideXml(const []),
+        'ppt/slides/_rels/slide1.xml.rels': rels(['../media/image9.png']),
+        'ppt/slides/_rels/slide2.xml.rels': rels(['../media/image2.jpeg', '../media/logo.emf']),
+      }, {
+        'ppt/media/image9.png': [1, 2, 3],
+        'ppt/media/image2.jpeg': [4, 5],
+        'ppt/media/logo.emf': [6],
+      });
+
+      final doc = extractDocumentText('lecture.pptx', bytes);
+
+      expect(doc.isEmpty, isTrue);
+      expect(doc.slideCount, 2);
+      expect(doc.mostlyPictures, isTrue);
+      expect(doc.images.map((i) => i.name), ['ppt/media/image9.png', 'ppt/media/image2.jpeg']);
+      expect(doc.images.first.mimeType, 'image/png');
+      expect(doc.images.last.mimeType, 'image/jpeg');
+    });
+
+    // صورة اللوجو بتتكرر في كل شريحة — تتبعت مرة واحدة بس.
+    // A logo repeated on every slide is sent once only.
+    test('a picture used on many slides is kept once', () {
+      final bytes = withMedia({
+        'ppt/slides/slide1.xml': slideXml(const []),
+        'ppt/slides/slide2.xml': slideXml(const []),
+        'ppt/slides/_rels/slide1.xml.rels': rels(['../media/logo.png']),
+        'ppt/slides/_rels/slide2.xml.rels': rels(['../media/logo.png']),
+      }, {
+        'ppt/media/logo.png': [1],
+      });
+
+      expect(extractDocumentText('l.pptx', bytes).images, hasLength(1));
+    });
+
+    test('slides full of text are not treated as pictures', () {
+      final words = List.filled(20, 'الجهد يساوي التيار مضروب في المقاومة').join(' ');
+      final bytes = withMedia({
+        'ppt/slides/slide1.xml': slideXml([words]),
+        'ppt/slides/_rels/slide1.xml.rels': rels(['../media/chart.png']),
+      }, {
+        'ppt/media/chart.png': [1],
+      });
+
+      final doc = extractDocumentText('l.pptx', bytes);
+      expect(doc.images, hasLength(1));
+      expect(doc.mostlyPictures, isFalse);
+    });
+
+    test('a slideshow (.ppsx) opens like a presentation', () {
+      final bytes = buildOfficeFile({'ppt/slides/slide1.xml': slideXml(['قانون أوم'])});
+      expect(extractDocumentText('l.ppsx', bytes).text, contains('قانون أوم'));
+    });
+
+    // الـ ppt القديم مش ZIP — لازم رسالة تقول للمستخدم يحفظه pptx، مش "صيغة
+    // مش مدعومة" وخلاص.
+    // The old ppt is not a ZIP: the user must be told to save it as pptx, not
+    // just "unsupported".
+    test('an old .ppt is recognised and explained, not just refused', () {
+      expect(isExtractable('lecture.ppt'), isTrue);
+      expect(
+        () => extractDocumentText('lecture.ppt', Uint8List.fromList([0xD0, 0xCF, 0x11, 0xE0])),
+        throwsA(isA<LegacyOfficeException>()),
+      );
+    });
+  });
 }

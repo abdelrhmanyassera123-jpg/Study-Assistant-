@@ -11,10 +11,20 @@ class ExtractedDocument {
     required this.fileName,
     required this.text,
     required this.blocks,
+    this.slideCount = 0,
+    this.images = const [],
   });
 
   final String fileName;
   final String text;
+
+  /// عدد الشرايح كلها، حتى اللي مفيهاش كلام (pptx بس).
+  /// Every slide, including those without text (pptx only).
+  final int slideCount;
+
+  /// الصور اللي جوه الشرايح بالترتيب (pptx بس).
+  /// The pictures inside the slides, in order (pptx only).
+  final List<SlideImage> images;
 
   /// عدد الشرايح (pptx) أو الفقرات (docx) — بنعرضه عشان المستخدم يطمن
   /// إن الاستخراج شغال قبل ما يستنى التلخيص.
@@ -24,9 +34,38 @@ class ExtractedDocument {
 
   bool get isEmpty => text.trim().isEmpty;
 
+  /// شرايح أغلبها صور: سلايدات متصورة سكان، أو كلام مرسوم جوه صور. نصها لوحده
+  /// مش كفاية، فالصور بتتبعت للموديل يقراها.
+  /// Slides that are mostly pictures: scanned slides, or words drawn inside
+  /// images. Their text alone is not enough, so the pictures go to the model.
+  bool get mostlyPictures =>
+      images.isNotEmpty && text.trim().length < 60 * (slideCount < 1 ? 1 : slideCount);
+
   /// تقدير تقريبي — العربي بياخد توكنز أكتر من الإنجليزي لكل حرف.
   /// Rough estimate; Arabic runs more tokens per character than English.
   int get approxTokens => (text.length / 2.6).round();
+}
+
+/// صورة من جوه شريحة.
+/// A picture from inside a slide.
+class SlideImage {
+  const SlideImage({required this.name, required this.mimeType, required this.bytes});
+
+  final String name;
+  final String mimeType;
+  final Uint8List bytes;
+}
+
+/// ملف Office قديم (قبل 2007) — مش أرشيف ZIP، فمينفعش يتفك في المتصفح.
+/// An old (pre-2007) Office file: not a ZIP archive, so it cannot be opened in
+/// the browser.
+class LegacyOfficeException implements Exception {
+  const LegacyOfficeException(this.extension);
+
+  final String extension;
+
+  @override
+  String toString() => 'Old Office format: .$extension';
 }
 
 class UnsupportedDocumentException implements Exception {
@@ -50,7 +89,8 @@ ExtractedDocument extractDocumentText(String fileName, Uint8List bytes) {
 
   return switch (ext) {
     'docx' => _extractDocx(fileName, bytes),
-    'pptx' => _extractPptx(fileName, bytes),
+    'pptx' || 'ppsx' || 'pptm' => _extractPptx(fileName, bytes),
+    'ppt' || 'pps' || 'doc' => throw LegacyOfficeException(ext),
     'txt' || 'md' || 'markdown' => _extractPlain(fileName, bytes),
     _ => throw UnsupportedDocumentException(ext),
   };
@@ -58,7 +98,27 @@ ExtractedDocument extractDocumentText(String fileName, Uint8List bytes) {
 
 /// الامتدادات اللي بنفك نصها في المتصفح.
 /// Extensions whose text we unpack in the browser.
-const extractableExtensions = ['pptx', 'docx', 'txt', 'md'];
+const extractableExtensions = ['pptx', 'ppsx', 'pptm', 'docx', 'txt', 'md'];
+
+/// صيغ Office القديمة: بتظهر في الاختيار عشان المستخدم يلاقي ملفه ويعرف يعمل
+/// إيه، بدل ما تبان رمادي من غير سبب.
+/// The old Office formats: listed in the picker so the user finds their file
+/// and is told what to do, instead of it showing greyed out for no reason.
+const legacyOfficeExtensions = ['ppt', 'pps', 'doc'];
+
+/// أنواع الملفات بالـ MIME — أندرويد بيفلتر بيها مش بالامتداد، فمن غيرها ملف
+/// الباوربوينت ممكن يبان رمادي في الاختيار.
+/// The file types by MIME: Android filters by these rather than the
+/// extension, and without them a PowerPoint file can show greyed out.
+const documentMimeTypes = [
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+  'application/pdf',
+  'text/plain',
+];
 
 /// الامتدادات اللي بنبعتها للموديل زي ما هي — الموديل بيقراها بنفسه.
 /// Extensions handed to the model untouched; it reads them itself.
@@ -67,6 +127,7 @@ const modelReadableExtensions = ['pdf'];
 const supportedDocumentExtensions = [
   ...extractableExtensions,
   ...modelReadableExtensions,
+  ...legacyOfficeExtensions,
 ];
 
 /// الصور: صورة سبورة، سلايد، أو صفحة كتاب — الموديل بيقراها بنفسه.
@@ -77,8 +138,10 @@ const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic'];
 bool isImageFile(String fileName) =>
     imageExtensions.contains(fileName.split('.').last.toLowerCase());
 
-bool isExtractable(String fileName) =>
-    extractableExtensions.contains(fileName.split('.').last.toLowerCase());
+bool isExtractable(String fileName) => [
+      ...extractableExtensions,
+      ...legacyOfficeExtensions,
+    ].contains(fileName.split('.').last.toLowerCase());
 
 /// هل الملف ده بيتبعت كملف بدل ما نستخرج نصه؟
 /// Is this file sent as a file rather than text-extracted?
@@ -137,7 +200,12 @@ ExtractedDocument _extractPptx(String fileName, Uint8List bytes) {
   }
 
   final slides = <String>[];
+  final images = <SlideImage>[];
+  final seen = <String>{};
   for (var i = 0; i < slideFiles.length; i++) {
+    for (final image in _slideImages(archive, slideFiles[i].name)) {
+      if (seen.add(image.name)) images.add(image);
+    }
     final document = XmlDocument.parse(_readAsString(slideFiles[i]));
     final lines = document
         .findAllElements('t', namespaceUri: '*')
@@ -154,7 +222,53 @@ ExtractedDocument _extractPptx(String fileName, Uint8List bytes) {
     fileName: fileName,
     text: slides.join('\n\n'),
     blocks: slides.length,
+    slideCount: slideFiles.length,
+    images: images,
   );
+}
+
+/// الصور اللي الشريحة بتستخدمها، من ملف علاقاتها
+/// (ppt/slides/_rels/slideN.xml.rels) — كده بتيجي بترتيب الشرايح مش بترتيب
+/// أسماء الملفات.
+/// The pictures a slide uses, from its relationships file
+/// (ppt/slides/_rels/slideN.xml.rels), so they come in slide order rather
+/// than by file name.
+///
+/// الصيغ اللي الموديل بيقراها بس: EMF وWMF رسومات أوفيس الموديل بيرفضها.
+/// Only formats the model reads: EMF and WMF are Office drawings it rejects.
+List<SlideImage> _slideImages(Archive archive, String slidePath) {
+  final slideName = slidePath.split('/').last;
+  final rels = archive.findFile('ppt/slides/_rels/$slideName.rels');
+  if (rels == null) return const [];
+
+  final XmlDocument document;
+  try {
+    document = XmlDocument.parse(_readAsString(rels));
+  } catch (_) {
+    return const [];
+  }
+
+  final found = <SlideImage>[];
+  for (final rel in document.findAllElements('Relationship', namespaceUri: '*')) {
+    if (!(rel.getAttribute('Type') ?? '').endsWith('/image')) continue;
+    final target = rel.getAttribute('Target') ?? '';
+    final name = target.startsWith('../')
+        ? 'ppt/${target.substring(3)}'
+        : target.startsWith('/')
+            ? target.substring(1)
+            : 'ppt/slides/$target';
+    final mime = switch (name.split('.').last.toLowerCase()) {
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      _ => null,
+    };
+    if (mime == null) continue;
+    final bytes = archive.findFile(name)?.readBytes();
+    if (bytes == null) continue;
+    found.add(SlideImage(name: name, mimeType: mime, bytes: Uint8List.fromList(bytes)));
+  }
+  return found;
 }
 
 int _slideNumber(String path) =>
