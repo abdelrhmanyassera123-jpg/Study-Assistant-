@@ -175,4 +175,47 @@ void main() {
       expect(prompt, contains('سابها فاضية'));
     });
   });
+
+  group('explain and review prompts', () {
+    // الشرح بيضيف أمثلة من برّه، فلازم تتعلّم — وإلا الطالب يكتبها في
+    // الامتحان على إنها من المنهج.
+    // The explanation adds outside examples, so they must be marked, or the
+    // student writes them in the exam as syllabus.
+    test('outside examples in an explanation are marked', () {
+      for (final level in ExplainLevel.values) {
+        final system = StudyAiPrompts.explainSystem(level, arabic: true);
+        expect(system, contains('💡 للتوضيح'));
+        expect(system, contains('من المحتوى بس'));
+      }
+    });
+
+    test('each level asks for a different depth', () {
+      final texts = {
+        for (final level in ExplainLevel.values)
+          StudyAiPrompts.explainSystem(level, arabic: true),
+      };
+      expect(texts, hasLength(ExplainLevel.values.length));
+    });
+
+    test('the review sheet stays on the material, in the app language', () {
+      final ar = StudyAiPrompts.reviewSystem(arabic: true);
+      final en = StudyAiPrompts.reviewSystem(arabic: false);
+      expect(ar, contains('المصدر الوحيد'));
+      expect(ar, contains('## أسئلة متوقعة'));
+      expect(en, contains('## Likely questions'));
+    });
+
+    test('the lecture prompt carries the text and mentions attached files', () {
+      final both = StudyAiPrompts.lecturePrompt(
+        lectureText: 'الجهد = التيار × المقاومة',
+        hasFile: true,
+        task: 'اشرح',
+      );
+      expect(both, contains('الجهد = التيار × المقاومة'));
+      expect(both, contains('الملفات المرفقة'));
+
+      final fileOnly = StudyAiPrompts.lecturePrompt(lectureText: '', hasFile: true, task: 'اشرح');
+      expect(fileOnly, isNot(contains('### محتوى المحاضرة')));
+    });
+  });
 }

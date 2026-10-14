@@ -23,24 +23,44 @@ class Repository {
 
   // ------------------------------------------------------------- offline
 
-  /// بيجيب الصفوف من السيرفر ويحفظ نسخة منها؛ لو مفيش نت بيرجّع آخر نسخة.
-  /// Fetches rows from the server and keeps a copy; with no connection it
-  /// returns the latest copy instead.
+  /// أقصى وقت نستنى فيه السيرفر لما يكون عندنا نسخة محفوظة.
+  /// The longest we wait on the server when a saved copy exists.
+  ///
+  /// النت الضعيف أسوأ من مفيش نت: الطلب مش بيفشل، بيعلّق — والمتصفح ممكن
+  /// يستنى دقايق. بعد المدة دي النسخة المحفوظة بتظهر، والطلب بيكمّل في
+  /// الخلفية ويحدّثها للمرة الجاية.
+  /// A weak connection is worse than none: the request does not fail, it
+  /// hangs, and the browser may wait minutes. After this the saved copy shows,
+  /// and the request carries on in the background to refresh it for next time.
+  static const _offlineAfter = Duration(seconds: 5);
+
+  /// بيجيب الصفوف من السيرفر ويحفظ نسخة منها؛ لو مفيش نت (أو النت بطيء
+  /// ومعانا نسخة) بيرجّع آخر نسخة.
+  /// Fetches rows from the server and keeps a copy; with no connection (or a
+  /// slow one while a copy exists) it returns the latest copy instead.
   Future<List<Map<String, dynamic>>> _rows(
     String key,
     Future<List<Map<String, dynamic>>> Function() fetch,
   ) async {
     final cacheKey = '$_uid/$key';
-    try {
-      final rows = await fetch();
+    final live = fetch().then((rows) {
       OfflineStore.put(cacheKey, rows);
       return rows;
-    } catch (e) {
-      final cached = await OfflineStore.get(cacheKey);
-      if (cached is List) {
-        return [for (final r in cached) if (r is Map) r.cast<String, dynamic>()];
-      }
-      rethrow;
+    });
+    // الطلب ممكن يفشل بعد ما رجّعنا النسخة المحفوظة — ما يطلعش كخطأ تايه.
+    // The request may fail after the saved copy was returned; keep that from
+    // surfacing as an unhandled error.
+    live.ignore();
+
+    final cached = await OfflineStore.get(cacheKey);
+    final copy = cached is List
+        ? [for (final r in cached) if (r is Map) r.cast<String, dynamic>()]
+        : null;
+    if (copy == null) return live;
+    try {
+      return await live.timeout(_offlineAfter);
+    } catch (_) {
+      return copy;
     }
   }
 
@@ -325,10 +345,13 @@ class Repository {
   /// How many cards were reviewed in the last 7 days.
   Future<int> reviewsThisWeek() async {
     final since = DateTime.now().subtract(const Duration(days: 7));
-    final rows = await _db
-        .from('card_reviews')
-        .select('id')
-        .gte('reviewed_at', since.toUtc().toIso8601String());
+    final rows = await _rows(
+      'reviews_week',
+      () => _db
+          .from('card_reviews')
+          .select('id')
+          .gte('reviewed_at', since.toUtc().toIso8601String()),
+    );
     return rows.length;
   }
 
@@ -389,8 +412,13 @@ class Repository {
 
   // ------------------------------------------------------- notification prefs
   Future<NotificationPrefs> notificationPrefs() async {
-    final row = await _db.from('notification_prefs').select().maybeSingle();
-    return row == null ? const NotificationPrefs() : NotificationPrefs.fromMap(row);
+    final rows = await _rows(
+      'notification_prefs',
+      () => _db.from('notification_prefs').select().limit(1),
+    );
+    return rows.isEmpty
+        ? const NotificationPrefs()
+        : NotificationPrefs.fromMap(rows.first);
   }
 
   Future<void> saveNotificationPrefs(NotificationPrefs prefs) =>

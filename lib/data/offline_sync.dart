@@ -20,8 +20,20 @@ final offlineSyncProvider = Provider<void>((ref) {
     }
   }
 
+  // أول ما النت يرجع: ابعت المستني، وبعدين هات نسخة جديدة من كل حاجة بدل
+  // النسخة المحفوظة اللي كانت ظاهرة.
+  // When the connection returns: send what is waiting, then fetch a fresh copy
+  // of everything in place of the saved one that was showing.
   final onOnline = ((web.Event _) {
-    flush();
+    flush().whenComplete(() {
+      ref.invalidate(subjectsProvider);
+      ref.invalidate(tasksProvider);
+      ref.invalidate(notesProvider);
+      ref.invalidate(cardsProvider);
+      ref.invalidate(sessionsProvider);
+      ref.invalidate(weeklyReviewsProvider);
+      ref.invalidate(scheduleProvider);
+    });
   }).toJS;
   web.window.addEventListener('online', onOnline);
   ref.onDispose(() => web.window.removeEventListener('online', onOnline));

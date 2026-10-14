@@ -357,6 +357,26 @@ abstract class Summarizer {
     void Function(int chunk, int totalChunks)? onChunk,
   });
 
+  /// بيشرح المحاضرة كلها بالمستوى المطلوب، والشرح بيوصل وهو بيتكتب.
+  /// Explains the whole lecture at the chosen level, streaming as it writes.
+  ///
+  /// [lectureText] و[files] زي [summarize]: واحد منهم على الأقل.
+  /// [lectureText] and [files] as in [summarize]: at least one of them.
+  Stream<String> explain({
+    String lectureText,
+    List<LectureFile> files,
+    ExplainLevel level,
+    required bool arabic,
+  });
+
+  /// بيعمل ورقة مراجعة سريعة للمحاضرة، وبتوصل وهي بتتكتب.
+  /// Builds a quick revision sheet for the lecture, streaming as it writes.
+  Stream<String> reviewSheet({
+    String lectureText,
+    List<LectureFile> files,
+    required bool arabic,
+  });
+
   /// بيعمل كروت مراجعة من محتوى مذاكرة.
   /// Builds review cards out of study material.
   Future<List<GeneratedCard>> makeCards(String source, {int count});

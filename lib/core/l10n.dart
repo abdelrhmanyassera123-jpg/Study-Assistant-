@@ -727,6 +727,33 @@ class AppL10n {
   String get generating => _('بيلخص...', 'Summarizing...');
   String get stopGenerating => _('إيقاف', 'Stop');
   String get theSummary => _('التلخيص', 'Summary');
+  String get modeSummary => _('تلخيص', 'Summary');
+  String get modeExplain => _('شرح', 'Explain');
+  String get modeReview => _('مراجعة', 'Review');
+  String get modeSummaryHint =>
+      _('تلخيص بأسلوبك وشكل كراستك.', 'A summary in your style and notebook layout.');
+  String get modeExplainHint => _(
+        'شرح مفصّل للمحاضرة كلها خطوة بخطوة، بأمثلة للتوضيح.',
+        'A detailed walk through the whole lecture, with examples.',
+      );
+  String get modeReviewHint => _(
+        'ورقة مراجعة سريعة قبل الامتحان: أهم النقط والتعريفات وأسئلة متوقعة.',
+        'A quick sheet for before the exam: key points, definitions, likely questions.',
+      );
+  String get explainLevel => _('مستوى الشرح', 'Depth');
+  String get levelSimple => _('مبسّط', 'Simple');
+  String get levelNormal => _('عادي', 'Normal');
+  String get levelDeep => _('متعمّق', 'In depth');
+  String get generateExplain => _('اشرح', 'Explain');
+  String get generateReview => _('جهّز المراجعة', 'Make the review');
+  String get explaining => _('بيشرح...', 'Explaining...');
+  String get preparingReview => _('بيجهّز المراجعة...', 'Preparing the review...');
+  String get theExplanation => _('الشرح', 'Explanation');
+  String get theReview => _('المراجعة', 'Review');
+  String get examplesNote => _(
+        'السطور اللي بتبدأ بـ «💡 للتوضيح» أمثلة من برّه المحاضرة عشان الفكرة توصل — متكتبهاش في الامتحان على إنها من المنهج.',
+        'Lines starting with “💡” are examples from outside the lecture, there to make the idea land — not syllabus to write in the exam.',
+      );
   String get saveAsNote => _('احفظ كملاحظة', 'Save as note');
   String get savedAsNote => _('اتحفظ في الملاحظات', 'Saved to notes');
   String get needLectureText =>

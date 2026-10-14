@@ -23,7 +23,16 @@ class AuthGate extends ConsumerWidget {
             ? const Scaffold(body: Center(child: CircularProgressIndicator()))
             : const HomeShell();
       },
-      error: (_, _) => const LoginPage(),
+      // الخطأ هنا غالبًا فشل تجديد الجلسة من غير نت (التوكن بيخلص بعد ساعة)،
+      // والمكتبة بتسيب الجلسة المحفوظة زي ما هي. لو فيه مستخدم، نفتح التطبيق
+      // على داتاه المحفوظة بدل ما نرميه على تسجيل الدخول وهو مش قادر يدخل.
+      // An error here is usually a failed session refresh with no connection
+      // (the token expires after an hour), and the library keeps the stored
+      // session. With a user present, open on their saved data rather than a
+      // login screen they cannot get past offline.
+      error: (_, _) => ref.watch(supabaseProvider).auth.currentUser == null
+          ? const LoginPage()
+          : const HomeShell(),
       data: (state) =>
           state.session == null ? const LoginPage() : const HomeShell(),
     );

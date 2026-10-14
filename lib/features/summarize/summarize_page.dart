@@ -14,8 +14,11 @@ import '../../core/share_target.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
+import '../../widgets/study_text.dart';
 import '../jobs/jobs_panel.dart';
 import '../jobs/lecture_job.dart';
+import '../study_ai/study_ai.dart';
+import '../study_ai/study_tools_row.dart';
 import 'audio_clip.dart';
 import 'audio_input.dart';
 import 'document_text.dart';
@@ -66,6 +69,17 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   double? _progress;
 
   SummaryPage? _page;
+
+  /// المعروض دلوقتي: تلخيص أو شرح أو مراجعة. كل واحد بيفضل محفوظ لما تبدّل.
+  /// What is showing: summary, explanation or review. Each one is kept while
+  /// switching between them.
+  StudyOutput _mode = StudyOutput.summary;
+  ExplainLevel _level = ExplainLevel.normal;
+
+  /// الشرح والمراجعة — نص عادي، عكس التلخيص اللي بيترسم صفحة.
+  /// The explanation and the review: plain text, unlike the summary, which is
+  /// drawn as a page.
+  final Map<StudyOutput, String> _texts = {};
 
   /// النص اللي اتلخص (تفريغ + نص ملزوق) — بيتحفظ عشان "إيه اللي اتنسى".
   /// The text that was summarized (transcript + pasted text), kept for "what
@@ -526,6 +540,109 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     });
   }
 
+  /// نص المحاضرة: الملزوق وتفريغ التسجيلات. null لو التفريغ وقف أو فشل —
+  /// والشاشة بتكون اتظبطت وقتها.
+  /// The lecture's text: what was pasted plus the recordings' transcripts.
+  /// Null when transcription stopped or failed, with the screen already reset.
+  ///
+  /// الصوت بيتحوّل لنص الأول. التلخيص من الصوت مباشرة بيخلي الموديل يلخص وهو
+  /// بيسمع، فبيضيع كلام — والتفريغ كمان بيتخزن فينفع تراجعه أو تحفظه، ومش
+  /// بيتعاد لو طلبت شرح بعد التلخيص.
+  /// Audio becomes text first. Summarizing straight from audio makes the model
+  /// summarize while listening, which loses what was said — and the
+  /// transcript is kept, so it can be read back or saved, and is not redone
+  /// when an explanation follows the summary.
+  Future<String?> _lectureText(Summarizer summarizer) async {
+    var text = _lecture.text.trim();
+    if (_clips.isEmpty) return text;
+
+    final transcript = await _transcribeAll(summarizer);
+    if (!mounted) return null;
+    if (transcript == null) {
+      setState(() {
+        _running = false;
+        _phase = null;
+        _progress = null;
+      });
+      return null;
+    }
+    text = [text, transcript].where((t) => t.trim().isNotEmpty).join('\n\n');
+    if (text.trim().isEmpty && _docs.isEmpty) {
+      setState(() {
+        _running = false;
+        _phase = null;
+        _progress = null;
+        _error = SummarizerException(context.l.transcriptEmpty);
+      });
+      return null;
+    }
+    return text;
+  }
+
+  /// الشرح أو المراجعة: نص بيتكتب قدامك، من نفس المحاضرة اللي بتتلخص.
+  /// The explanation or the review: text written out live, from the same
+  /// lecture the summary uses.
+  Future<void> _generateText(StudyOutput mode) async {
+    final l = context.l;
+    if (!_hasInput) {
+      showSnack(context, l.needLectureText);
+      return;
+    }
+
+    final summarizer = ref.read(activeSummarizerProvider);
+    final arabic = ref.read(settingsProvider).languageCode == 'ar';
+    final run = ++_runId;
+
+    setState(() {
+      _running = true;
+      _texts.remove(mode);
+      _error = null;
+      _phase = null;
+      _progress = null;
+    });
+
+    final text = await _lectureText(summarizer);
+    if (text == null || !mounted || run != _runId) return;
+    setState(() {
+      _phase = mode == StudyOutput.explain ? l.explaining : l.preparingReview;
+      _progress = null;
+    });
+
+    _source = text;
+    final written = StringBuffer();
+    try {
+      final stream = mode == StudyOutput.explain
+          ? summarizer.explain(
+              lectureText: text,
+              files: _docs,
+              level: _level,
+              arabic: arabic,
+            )
+          : summarizer.reviewSheet(lectureText: text, files: _docs, arabic: arabic);
+      await for (final chunk in stream) {
+        if (!mounted || run != _runId) return;
+        written.write(chunk);
+        setState(() {
+          _texts[mode] = written.toString();
+          _phase = null;
+        });
+      }
+      if (!mounted || run != _runId) return;
+      setState(() {
+        _running = false;
+        _phase = null;
+      });
+    } on SummarizerException catch (e) {
+      if (mounted && run == _runId) {
+        setState(() {
+          _running = false;
+          _phase = null;
+          _error = e;
+        });
+      }
+    }
+  }
+
   Future<void> _generate() async {
     if (!_hasInput) {
       showSnack(context, context.l.needLectureText);
@@ -553,36 +670,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       _progress = null;
     });
 
-    // الصوت بيتحوّل لنص الأول. التلخيص من الصوت مباشرة بيخلي الموديل يلخص وهو
-    // بيسمع، فبيضيع كلام — والتفريغ كمان بيتخزن فينفع تراجعه أو تحفظه.
-    // Audio becomes text first. Summarizing straight from audio makes the model
-    // summarize while listening, which loses what was said — and the
-    // transcript is kept, so it can be read back or saved.
-    var text = _lecture.text.trim();
-    if (_clips.isNotEmpty) {
-      final transcript = await _transcribeAll(summarizer);
-      if (!mounted) return;
-      if (transcript == null) {
-        setState(() {
-          _running = false;
-          _phase = null;
-          _progress = null;
-        });
-        return;
-      }
-      text = [text, transcript].where((t) => t.trim().isNotEmpty).join('\n\n');
-      if (text.trim().isEmpty && _docs.isEmpty) {
-        setState(() {
-          _running = false;
-          _phase = null;
-          _progress = null;
-          _error = SummarizerException(context.l.transcriptEmpty);
-        });
-        return;
-      }
-    }
-
-    if (!mounted) return;
+    final text = await _lectureText(summarizer);
+    if (text == null || !mounted) return;
     setState(() {
       _phase = context.l.generating;
       _progress = null;
@@ -838,20 +927,34 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     showSnack(context, l.batchQueued(queued));
   }
 
-  Future<void> _saveAsNote() async {
+  Future<void> _saveAsNote() => _saveNote(
+        body: _page?.toPlainText() ?? '',
+        fallbackTitle: _page?.title.trim() ?? '',
+        kind: context.l.theSummary,
+      );
+
+  /// بيحفظ الناتج كملاحظة باسم الملف، ولو مفيش ملف بـ [fallbackTitle].
+  /// الشرح والمراجعة بياخدوا نوعهم في العنوان عشان ما يتلخبطوش مع التلخيص.
+  /// Saves the output as a note named after the file, else [fallbackTitle].
+  /// The explanation and the review carry their kind in the title so they do
+  /// not get mixed up with the summary.
+  Future<void> _saveNote({
+    required String body,
+    required String fallbackTitle,
+    required String kind,
+  }) async {
     final l = context.l;
     final source = _extracted?.fileName ??
         (_docs.isNotEmpty ? _docs.first.name : null) ??
         (_clips.isNotEmpty ? _clips.first.name : null);
-    final title = source?.replaceAll(RegExp(r'\.[^.]+$'), '') ??
-        _page?.title.trim() ??
-        '';
+    var title = source?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? fallbackTitle;
+    if (kind != l.theSummary) title = title.isEmpty ? kind : '$title — $kind';
 
     try {
       await ref.read(repositoryProvider).addNote(Note(
             id: '',
-            title: title.isEmpty ? l.theSummary : title,
-            body: readableMath(_page?.toPlainText() ?? ''),
+            title: title.isEmpty ? kind : title,
+            body: readableMath(body),
             subjectId: _subjectId,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
@@ -880,7 +983,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
         appSettings.autoModel || appSettings.geminiModel.isNotEmpty;
 
     final hasInput = _hasInput;
-    final hasResult = _page != null;
+    final hasResult =
+        _mode == StudyOutput.summary ? _page != null : _texts[_mode] != null;
     final profiles = ref.watch(styleProfilesProvider).value ?? const {};
     final hasLayout = (profiles[_subjectId] ?? profiles[null]) != null;
 
@@ -1133,6 +1237,69 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // نفس المحاضرة، تلات حاجات منها. كل واحدة بتتعمل لما تطلبها
+                  // بس — الحصة مشتركة، والتلاتة مع بعض تلات أضعاف الاستهلاك.
+                  // One lecture, three things out of it. Each is made only when
+                  // asked for: the quota is shared, and all three at once would
+                  // cost three times as much.
+                  SegmentedButton<StudyOutput>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(
+                        value: StudyOutput.summary,
+                        icon: const Icon(Icons.notes_rounded, size: 18),
+                        label: Text(l.modeSummary),
+                      ),
+                      ButtonSegment(
+                        value: StudyOutput.explain,
+                        icon: const Icon(Icons.school_outlined, size: 18),
+                        label: Text(l.modeExplain),
+                      ),
+                      ButtonSegment(
+                        value: StudyOutput.review,
+                        icon: const Icon(Icons.checklist_rounded, size: 18),
+                        label: Text(l.modeReview),
+                      ),
+                    ],
+                    selected: {_mode},
+                    onSelectionChanged: _running
+                        ? null
+                        : (s) => setState(() {
+                              _mode = s.first;
+                              _error = null;
+                            }),
+                  ),
+                  const SizedBox(height: Insets.sm),
+                  Text(
+                    switch (_mode) {
+                      StudyOutput.summary => l.modeSummaryHint,
+                      StudyOutput.explain => l.modeExplainHint,
+                      StudyOutput.review => l.modeReviewHint,
+                    },
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  if (_mode == StudyOutput.explain) ...[
+                    const SizedBox(height: Insets.md),
+                    Text(l.explainLevel, style: Theme.of(context).textTheme.labelLarge),
+                    const SizedBox(height: Insets.sm),
+                    SegmentedButton<ExplainLevel>(
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment(value: ExplainLevel.simple, label: Text(l.levelSimple)),
+                        ButtonSegment(value: ExplainLevel.normal, label: Text(l.levelNormal)),
+                        ButtonSegment(value: ExplainLevel.deep, label: Text(l.levelDeep)),
+                      ],
+                      selected: {_level},
+                      onSelectionChanged:
+                          _running ? null : (s) => setState(() => _level = s.first),
+                    ),
+                  ],
+                  const SizedBox(height: Insets.lg),
+
                   if (_running)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1150,16 +1317,29 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                     )
                   else
                     FilledButton.icon(
-                      onPressed: modelChosen ? _generate : null,
+                      onPressed: !modelChosen
+                          ? null
+                          : _mode == StudyOutput.summary
+                              ? _generate
+                              : () => _generateText(_mode),
                       icon: const Icon(Icons.auto_awesome_rounded, size: 19),
                       label: Text(
-                        modelChosen ? l.generateSummary : l.chooseModelFirst,
+                        !modelChosen
+                            ? l.chooseModelFirst
+                            : switch (_mode) {
+                                StudyOutput.summary => l.generateSummary,
+                                StudyOutput.explain => l.generateExplain,
+                                StudyOutput.review => l.generateReview,
+                              },
                       ),
                     ),
 
-                  // نفس المحاضرة، بس على السيرفر: ينفع تقفل التطبيق.
+                  // نفس المحاضرة، بس على السيرفر: ينفع تقفل التطبيق. الشغل في
+                  // الخلفية بيعمل التلخيص (ومعاه الكروت والملاحظة) بس.
                   // The same lecture, but on the server: the app can be closed.
-                  if (!_running) ...[
+                  // The background run makes the summary (with its cards and
+                  // note) only.
+                  if (!_running && _mode == StudyOutput.summary) ...[
                     const SizedBox(height: Insets.sm),
                     if (_queuePhase != null)
                       ProgressBar(label: _queuePhase!)
@@ -1178,7 +1358,34 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
 
                   // الصفحة المرسومة بتخطيط المستخدم.
                   // The page drawn in the layout read from the notebook.
-                  if (_page != null) ...[
+                  if (_mode != StudyOutput.summary && _texts[_mode] != null) ...[
+                    const SizedBox(height: Insets.xl),
+                    _TextResult(
+                      text: _texts[_mode]!,
+                      title: _mode == StudyOutput.explain ? l.theExplanation : l.theReview,
+                      note: _mode == StudyOutput.explain ? l.examplesNote : null,
+                      done: !_running,
+                      onSaveNote: () => _saveNote(
+                        body: _texts[_mode]!,
+                        fallbackTitle: '',
+                        kind: _mode == StudyOutput.explain ? l.theExplanation : l.theReview,
+                      ),
+                      // أدوات المذاكرة (كروت، اسأل، امتحان) مكانها الطبيعي جنب
+                      // ورقة المراجعة. مصدرها المحاضرة نفسها لو نص، وإلا الورقة.
+                      // The study tools (cards, ask, exam) belong beside the
+                      // revision sheet. Their source is the lecture itself when
+                      // it is text, else the sheet.
+                      tools: _mode == StudyOutput.review && !_running
+                          ? StudyToolsSection(
+                              title: l.theReview,
+                              source: _source.trim().length >= 40 ? _source : _texts[_mode]!,
+                              subjectId: _subjectId,
+                            )
+                          : null,
+                    ),
+                  ],
+
+                  if (_mode == StudyOutput.summary && _page != null) ...[
                     const SizedBox(height: Insets.xl),
                     StyledResult(
                       page: _page!,
@@ -1580,6 +1787,80 @@ class _ErrorBox extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// الشرح أو المراجعة وهما بيتكتبوا، ومعاهم النسخ والحفظ.
+/// The explanation or the review as it is written, with copy and save.
+class _TextResult extends StatelessWidget {
+  const _TextResult({
+    required this.text,
+    required this.title,
+    required this.done,
+    required this.onSaveNote,
+    this.note,
+    this.tools,
+  });
+
+  final String text;
+  final String title;
+
+  /// خلص الكتابة — النسخ والحفظ قبلها بيمسكوا نص ناقص.
+  /// Finished writing; copying or saving before then takes a partial text.
+  final bool done;
+  final Future<void> Function() onSaveNote;
+  final String? note;
+  final Widget? tools;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (note != null) ...[
+          InfoBanner(message: note!),
+          const SizedBox(height: Insets.md),
+        ],
+        Container(
+          padding: const EdgeInsets.all(Insets.lg),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: StudyText(text),
+        ),
+        if (done) ...[
+          const SizedBox(height: Insets.md),
+          Wrap(
+            spacing: Insets.sm,
+            runSpacing: Insets.sm,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onSaveNote,
+                icon: const Icon(Icons.save_alt_rounded, size: 19),
+                label: Text(l.saveAsNote),
+              ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: readableMath(text)));
+                  if (context.mounted) showSnack(context, l.copied);
+                },
+                icon: const Icon(Icons.copy_rounded, size: 19),
+                label: Text(l.copyText),
+              ),
+            ],
+          ),
+        ],
+        if (tools != null) ...[
+          const SizedBox(height: Insets.lg),
+          tools!,
+        ],
+      ],
     );
   }
 }

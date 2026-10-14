@@ -760,6 +760,80 @@ class GeminiSummarizer implements Summarizer {
   }
 
   @override
+  Stream<String> explain({
+    String lectureText = '',
+    List<LectureFile> files = const [],
+    ExplainLevel level = ExplainLevel.normal,
+    required bool arabic,
+  }) =>
+      _lectureStream(
+        system: StudyAiPrompts.explainSystem(level, arabic: arabic),
+        task: 'اشرح المحاضرة دي كلها بالقواعد.',
+        lectureText: lectureText,
+        files: files,
+        // أعلى شوية من المراجعة: الأمثلة والتشبيهات محتاجة شوية حرية.
+        // A little warmer than the review: examples and analogies need room.
+        temperature: 0.5,
+      );
+
+  @override
+  Stream<String> reviewSheet({
+    String lectureText = '',
+    List<LectureFile> files = const [],
+    required bool arabic,
+  }) =>
+      _lectureStream(
+        system: StudyAiPrompts.reviewSystem(arabic: arabic),
+        task: 'اعمل ورقة مراجعة للمحاضرة دي بالشكل المطلوب.',
+        lectureText: lectureText,
+        files: files,
+        temperature: 0.2,
+      );
+
+  /// نفس طريق [summarize] — الملفات الكبيرة بتترفع الأول وطول المحاضرة
+  /// بيتفحص — بس ببرومبت تاني.
+  /// The same path as [summarize] (large files upload first, the lecture's
+  /// length is checked) with a different prompt.
+  Stream<String> _lectureStream({
+    required String system,
+    required String task,
+    required String lectureText,
+    required List<LectureFile> files,
+    required double temperature,
+  }) async* {
+    _requireSignIn();
+    _requireFitting(files);
+    if (lectureText.trim().isEmpty && files.isEmpty) _requireText(lectureText);
+
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
+    }
+
+    final prompt = StudyAiPrompts.lecturePrompt(
+      lectureText: lectureText,
+      hasFile: files.isNotEmpty,
+      task: task,
+    );
+    final approx = StudyPrompt.approxTokens(prompt);
+    if (approx > GeminiConfig.inputTokenBudget) {
+      throw SummarizerException(
+        'المحاضرة طويلة جدًا (~$approx توكن).',
+        hint: 'قسّم المحاضرة لجزئين.',
+      );
+    }
+
+    yield* _stream(
+      system: system,
+      prompt: prompt,
+      files: inline,
+      uploads: uploads,
+      temperature: temperature,
+    );
+  }
+
+  @override
   Future<List<GeneratedCard>> makeCards(String source, {int count = 8}) async {
     _requireSignIn();
     _requireText(source);

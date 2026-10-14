@@ -33,16 +33,41 @@ self.addEventListener("activate", (event) => {
 // "/share-target" with no real page to answer it.
 const SHELL_CACHE = "app-shell-v1";
 
-async function networkFirst(request) {
+// النت الضعيف ما بيفشلش، بيعلّق. لو معانا نسخة محفوظة ما نستناش أكتر من
+// كده؛ الطلب بيكمّل في الخلفية ويحدّث النسخة للفتحة الجاية.
+// A weak connection does not fail, it hangs. With a saved copy we wait no
+// longer than this; the request carries on in the background and refreshes
+// the copy for the next open.
+const NETWORK_TIMEOUT_MS = 4000;
+
+async function savedCopy(cache, request) {
+  const navigate = request.mode === "navigate";
+  const saved = await cache.match(request, { ignoreSearch: navigate });
+  if (saved || !navigate) return saved;
+  // التطبيق صفحة واحدة: أي عنوان بيفتح نفس index.html.
+  // The app is a single page: any address opens the same index.html.
+  return (await cache.match(new URL("./", self.registration.scope).href, { ignoreSearch: true })) ||
+    (await cache.match(new URL("index.html", self.registration.scope).href, { ignoreSearch: true }));
+}
+
+async function networkFirst(event) {
+  const request = event.request;
   const cache = await caches.open(SHELL_CACHE);
-  try {
-    const response = await fetch(request);
-    if (response.ok || response.type === "opaque") cache.put(request, response.clone());
+  const live = fetch(request).then((response) => {
+    if (response.ok || response.type === "opaque") {
+      return cache.put(request, response.clone()).then(() => response, () => response);
+    }
     return response;
+  });
+  event.waitUntil(live.catch(() => {}));
+
+  const saved = await savedCopy(cache, request);
+  if (!saved) return live;
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NETWORK_TIMEOUT_MS));
+  try {
+    return (await Promise.race([live, timeout])) || saved;
   } catch (e) {
-    const saved = await cache.match(request, { ignoreSearch: request.mode === "navigate" });
-    if (saved) return saved;
-    throw e;
+    return saved;
   }
 }
 
@@ -69,11 +94,11 @@ self.addEventListener("fetch", (event) => {
   // first so updates arrive, the saved copy when offline — so the app opens
   // without a connection.
   if (url.origin === self.location.origin && !url.pathname.startsWith("/__offline__/")) {
-    event.respondWith(networkFirst(event.request));
+    event.respondWith(networkFirst(event));
     return;
   }
   if (/(^|\.)gstatic\.com$|^fonts\.googleapis\.com$/.test(url.hostname)) {
-    event.respondWith(networkFirst(event.request));
+    event.respondWith(networkFirst(event));
     return;
   }
   // صور التلخيص من ويكيميديا ما بتتغيرش، فالمحفوظة الأول.
