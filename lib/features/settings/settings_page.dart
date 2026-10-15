@@ -295,6 +295,27 @@ class _NotificationCustomizeCardState
     }
   }
 
+  Future<void> _sendDigestNow() async {
+    final l = context.l;
+    setState(() => _busy = true);
+    try {
+      final sent = await ref.read(repositoryProvider).sendTodayDigestNow();
+      if (!mounted) return;
+      showSnack(
+        context,
+        sent < 0
+            ? l.dailyDigestNoneLeft
+            : sent == 0
+                ? l.dailyDigestNoDevice
+                : l.dailyDigestSent(sent),
+      );
+    } catch (e) {
+      if (mounted) showSnack(context, '${l.dailyDigestFailed}\n$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -370,6 +391,15 @@ class _NotificationCustomizeCardState
                             ));
                           }
                         },
+                ),
+              if (prefs.dailyDigest)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _sendDigestNow,
+                    icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                    label: Text(l.dailyDigestNow),
+                  ),
                 ),
               const SizedBox(height: Insets.lg),
               _FieldLabel(l.notificationDefaultLead),

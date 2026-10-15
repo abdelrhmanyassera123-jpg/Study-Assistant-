@@ -26,7 +26,7 @@
 // =====================================================================
 
 import { PushGoneError, sendWebPush } from "../_shared/webpush.ts";
-import { type DigestEntry, digestEvent } from "../_shared/today_digest.ts";
+import { type DigestEntry, digestEvent, digestPush, endOf } from "../_shared/today_digest.ts";
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -112,7 +112,14 @@ Deno.serve(async (req) => {
 
   const auth = req.headers.get("Authorization");
   if (auth) {
-    return withCors(await handleTestPush(auth));
+    let body: { digest?: boolean } = {};
+    try {
+      body = await req.json();
+    } catch {
+      // طلب من غير جسم = زرار التجربة القديم.
+      // A request with no body is the older test button.
+    }
+    return withCors(body.digest ? await handleDigestNow(auth) : await handleTestPush(auth));
   }
 
   return withCors(new Response("unauthorized", { status: 401 }));
@@ -390,6 +397,47 @@ async function handleTestPush(auth: string): Promise<Response> {
   return new Response(JSON.stringify({ sent, found: subs.length }), {
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/// زرار "ابعته دلوقتي": بيبعت إشعار محاضرات النهاردة بحالته دلوقتي على أجهزة
+/// المستخدم اللي بينادي بس — RLS بالـ Authorization بتاعه، من غير service role.
+/// The "send it now" button: sends today's lectures notification, as it
+/// stands right now, to the calling user's own devices only — scoped by RLS
+/// via their Authorization, with no service role.
+async function handleDigestNow(auth: string): Promise<Response> {
+  const headers = { apikey: ANON_KEY, Authorization: auth };
+  const { weekday, minutes } = cairoWallClock(new Date());
+
+  const [entriesRes, subsRes] = await Promise.all([
+    fetch(
+      `${SUPABASE_URL}/rest/v1/schedule_entries?select=id,title,location,session_type,start_minutes,end_minutes&weekday=eq.${weekday}`,
+      { headers },
+    ),
+    fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=id,endpoint,p256dh,auth`, { headers }),
+  ]);
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
+  if (!entriesRes.ok || !subsRes.ok) {
+    return json({ sent: 0, error: "unauthorized" }, entriesRes.status === 401 ? 401 : 500);
+  }
+  const entries: DigestEntry[] = await entriesRes.json();
+  const subs: PushSubscriptionRow[] = await subsRes.json();
+
+  const left = entries.filter((e) => endOf(e) > minutes).length;
+  if (left === 0) return json({ sent: 0, found: subs.length, today: entries.length, left });
+
+  const push = digestPush(entries, minutes);
+  let sent = 0;
+  for (const sub of subs) {
+    try {
+      await sendWebPush(sub, push, 3600);
+      sent++;
+    } catch (err) {
+      if (!(err instanceof PushGoneError)) console.error("digest-now push failed", sub.id, err);
+    }
+  }
+  return json({ sent, found: subs.length, today: entries.length, left });
 }
 
 /// القالب المخصص لو موجود، وإلا الصيغة الافتراضية — نفس منطق

@@ -745,6 +745,18 @@ class AppL10n {
         'One notification at the start of the day listing your lectures; it updates silently and goes away after the last one.',
       );
   String get dailyDigestTime => _('بيوصل الساعة', 'Arrives at');
+  String get dailyDigestNow => _('ابعته دلوقتي', 'Send it now');
+  String dailyDigestSent(int devices) => _(
+        'اتبعت لـ $devices ${devices == 1 ? 'جهاز' : 'أجهزة'}.',
+        'Sent to $devices device${devices == 1 ? '' : 's'}.',
+      );
+  String get dailyDigestNoneLeft =>
+      _('مفيش محاضرات فاضلة النهاردة.', 'No lectures left today.');
+  String get dailyDigestNoDevice => _(
+        'مفيش جهاز مفعّل عليه الإشعارات — فعّلها من فوق الأول.',
+        'No device has notifications on — turn them on above first.',
+      );
+  String get dailyDigestFailed => _('الإرسال فشل.', 'Sending failed.');
   String get modeSummary => _('تلخيص', 'Summary');
   String get modeExplain => _('شرح', 'Explain');
   String get modeReview => _('مراجعة', 'Review');

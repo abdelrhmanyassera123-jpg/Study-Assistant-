@@ -428,6 +428,18 @@ class Repository {
   /// اللي وصلها، أو 0 لو مفيش اشتراك أصلاً.
   /// Sends a test notification to any of this user's push subscriptions.
   /// Returns how many devices it reached, or 0 if there is no subscription.
+  /// بيبعت إشعار محاضرات النهاردة دلوقتي على أجهزة المستخدم. بيرجّع عدد الأجهزة
+  /// اللي وصلها، و-1 لو مفيش محاضرات فاضلة النهاردة.
+  /// Sends today's lectures notification now to the user's devices. Returns
+  /// how many devices it reached, or -1 when no lectures are left today.
+  Future<int> sendTodayDigestNow() async {
+    final res = await _db.functions.invoke('send-reminders', body: {'digest': true});
+    final data = res.data;
+    if (data is Map && data['left'] == 0) return -1;
+    if (data is Map && data['sent'] is num) return (data['sent'] as num).toInt();
+    return 0;
+  }
+
   Future<int> sendTestPush() async {
     final res = await _db.functions.invoke('send-reminders', body: {'test': true});
     final data = res.data;
