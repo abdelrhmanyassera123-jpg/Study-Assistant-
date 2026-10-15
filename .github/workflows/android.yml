@@ -1,0 +1,75 @@
+# بيبني تطبيق أندرويد (android_app/) وينشره كـ Release، فالتطبيق المتثبّت
+# يلاقيه ويعرض "حدّث". الموقع نفسه بيتحدّث من فيرسيل من غير ده.
+# Builds the Android app (android_app/) and publishes it as a release, where
+# the installed app finds it and offers to update. The site itself updates
+# from Vercel without this.
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android_app/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.0
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter test
+
+      # نفس المفتاح في كل نسخة — من غيره أندرويد يرفض التحديث فوق القديمة.
+      # The same key on every build; without it Android refuses to update over
+      # the old one.
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > android/upload.p12
+          {
+            echo "storeFile=upload.p12"
+            echo "storeType=pkcs12"
+            echo "storePassword=$PASSWORD"
+            echo "keyAlias=upload"
+            echo "keyPassword=$PASSWORD"
+          } > android/key.properties
+
+      # رقم البناء هو رقم النسخة: التطبيق بيقارنه برقم آخر Release.
+      # The build number is the version: the app compares it with the latest
+      # release's number.
+      - run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
+
+      - run: cp build/app/outputs/flutter-apk/app-release.apk study-assistant.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.run_number }}
+          name: تطبيق أندرويد ${{ github.run_number }}
+          body: |
+            حمّل study-assistant.apk وثبّته. لو التطبيق متثبّت قبل كده، هيتحدّث فوقه وداتاك زي ما هي.
+            Download study-assistant.apk and install it; it updates over an existing install.
+          files: android_app/study-assistant.apk
+          make_latest: true
