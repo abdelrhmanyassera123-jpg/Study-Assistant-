@@ -30,7 +30,19 @@ export async function sendWebPush(
     /// أزرار جوه التنبيه، وكل زرار ليه صفحة.
     /// Buttons inside the notification, each with its own page.
     actions?: { action: string; title: string; url: string }[];
+    /// false: التحديث بيحل محل الإشعار اللي بنفس الـ tag من غير ما ينبّه تاني.
+    /// false: the update replaces the one with the same tag without alerting
+    /// again.
+    renotify?: boolean;
+    /// اقفل الإشعار اللي بالـ tag ده بدل ما تعرض جديد.
+    /// Close the notification with this tag instead of showing a new one.
+    close?: boolean;
   },
+  /// المدة اللي خدمة الـ push بتحاول توصّله فيها لو الموبايل مقفول أو من غير
+  /// نت (بالثواني).
+  /// How long the push service keeps trying if the phone is off or offline
+  /// (seconds).
+  ttlSeconds = 300,
 ): Promise<void> {
   const endpointOrigin = new URL(sub.endpoint).origin;
   const vapidHeader = await buildVapidHeader(endpointOrigin);
@@ -41,7 +53,7 @@ export async function sendWebPush(
     headers: {
       "Content-Type": "application/octet-stream",
       "Content-Encoding": "aes128gcm",
-      TTL: "300",
+      TTL: String(ttlSeconds),
       Authorization: vapidHeader,
     },
     body,

@@ -77,9 +77,10 @@ enum AppSection {
 /// The visible section; pages set it to navigate to each other.
 class SectionNotifier extends Notifier<AppSection> {
   @override
-  AppSection build() =>
-      SharedFile.hasPending || LaunchIntent.hasPending
-          ? AppSection.summarize
+  AppSection build() => SharedFile.hasPending || LaunchIntent.hasPending
+      ? AppSection.summarize
+      : LaunchIntent.opensSchedule
+          ? AppSection.schedule
           : AppSection.dashboard;
 
   void go(AppSection section) => state = section;

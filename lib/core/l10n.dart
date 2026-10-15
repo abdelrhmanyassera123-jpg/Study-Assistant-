@@ -739,6 +739,12 @@ class AppL10n {
         'الشرايح أغلبها صور، فهتتبعت $count صورة للموديل يقراها.',
         'The slides are mostly pictures, so $count of them go to the model to read.',
       );
+  String get dailyDigest => _('إشعار محاضرات النهاردة', "Today's lectures notification");
+  String get dailyDigestHint => _(
+        'إشعار واحد أول اليوم فيه محاضراتك، بيتحدّث من غير صوت مع كل محاضرة وبيختفي بعد آخرها.',
+        'One notification at the start of the day listing your lectures; it updates silently and goes away after the last one.',
+      );
+  String get dailyDigestTime => _('بيوصل الساعة', 'Arrives at');
   String get modeSummary => _('تلخيص', 'Summary');
   String get modeExplain => _('شرح', 'Explain');
   String get modeReview => _('مراجعة', 'Review');

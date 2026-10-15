@@ -332,6 +332,45 @@ class _NotificationCustomizeCardState
                 onChanged:
                     _busy ? null : (v) => _save(prefs.copyWith(vibrateOn: v)),
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: prefs.dailyDigest,
+                title: Text(l.dailyDigest),
+                subtitle: Text(l.dailyDigestHint),
+                onChanged:
+                    _busy ? null : (v) => _save(prefs.copyWith(dailyDigest: v)),
+              ),
+              if (prefs.dailyDigest)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.wb_twilight_rounded),
+                  title: Text(l.dailyDigestTime),
+                  trailing: Text(
+                    MaterialLocalizations.of(context).formatTimeOfDay(
+                      TimeOfDay(
+                        hour: prefs.digestMinutes ~/ 60,
+                        minute: prefs.digestMinutes % 60,
+                      ),
+                    ),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  onTap: _busy
+                      ? null
+                      : () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay(
+                              hour: prefs.digestMinutes ~/ 60,
+                              minute: prefs.digestMinutes % 60,
+                            ),
+                          );
+                          if (picked != null) {
+                            _save(prefs.copyWith(
+                              digestMinutes: picked.hour * 60 + picked.minute,
+                            ));
+                          }
+                        },
+                ),
               const SizedBox(height: Insets.lg),
               _FieldLabel(l.notificationDefaultLead),
               DropdownButtonFormField<int?>(

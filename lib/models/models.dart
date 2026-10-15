@@ -536,6 +536,8 @@ class NotificationPrefs {
     this.vibrateOn = true,
     this.customBody,
     this.defaultRemindMinutes = 10,
+    this.dailyDigest = true,
+    this.digestMinutes = 420,
   });
 
   final bool soundOn;
@@ -547,18 +549,30 @@ class NotificationPrefs {
 
   final int defaultRemindMinutes;
 
+  /// إشعار "محاضرات النهاردة" اللي بيفضل موجود لحد آخر محاضرة.
+  /// The "today's lectures" notification that stays until the last lecture.
+  final bool dailyDigest;
+
+  /// ميعاده أول اليوم، بالدقايق من نص الليل (420 = 7:00 ص).
+  /// Its start-of-day time, in minutes after midnight (420 = 7 AM).
+  final int digestMinutes;
+
   NotificationPrefs copyWith({
     bool? soundOn,
     bool? vibrateOn,
     String? customBody,
     bool clearCustomBody = false,
     int? defaultRemindMinutes,
+    bool? dailyDigest,
+    int? digestMinutes,
   }) =>
       NotificationPrefs(
         soundOn: soundOn ?? this.soundOn,
         vibrateOn: vibrateOn ?? this.vibrateOn,
         customBody: clearCustomBody ? null : (customBody ?? this.customBody),
         defaultRemindMinutes: defaultRemindMinutes ?? this.defaultRemindMinutes,
+        dailyDigest: dailyDigest ?? this.dailyDigest,
+        digestMinutes: digestMinutes ?? this.digestMinutes,
       );
 
   factory NotificationPrefs.fromMap(Map<String, dynamic> m) => NotificationPrefs(
@@ -566,6 +580,8 @@ class NotificationPrefs {
         vibrateOn: (m['vibrate_on'] as bool?) ?? true,
         customBody: m['custom_body'] as String?,
         defaultRemindMinutes: (m['default_remind_minutes'] as num?)?.toInt() ?? 10,
+        dailyDigest: (m['daily_digest'] as bool?) ?? true,
+        digestMinutes: (m['digest_minutes'] as num?)?.toInt() ?? 420,
       );
 
   Map<String, dynamic> toUpsert(String userId) => {
@@ -574,6 +590,8 @@ class NotificationPrefs {
         'vibrate_on': vibrateOn,
         'custom_body': customBody,
         'default_remind_minutes': defaultRemindMinutes,
+        'daily_digest': dailyDigest,
+        'digest_minutes': digestMinutes,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }

@@ -12,6 +12,10 @@ class LaunchIntent {
   static String? _record = _param('record');
   static String? _job = _param('job');
 
+  /// إشعار محاضرات النهاردة بيفتح على الجدول.
+  /// Today's lectures notification opens on the timetable.
+  static final bool opensSchedule = _param('open') == 'schedule';
+
   static String? _param(String name) {
     final value = Uri.base.queryParameters[name]?.trim();
     return value == null || value.isEmpty ? null : value;

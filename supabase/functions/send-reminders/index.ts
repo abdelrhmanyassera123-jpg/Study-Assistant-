@@ -26,6 +26,7 @@
 // =====================================================================
 
 import { PushGoneError, sendWebPush } from "../_shared/webpush.ts";
+import { type DigestEntry, digestEvent } from "../_shared/today_digest.ts";
 
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -63,6 +64,8 @@ interface NotificationPrefsRow {
   vibrate_on: boolean;
   custom_body: string | null;
   default_remind_minutes: number;
+  daily_digest?: boolean;
+  digest_minutes?: number;
 }
 
 const DEFAULT_PREFS: NotificationPrefsRow = {
@@ -70,6 +73,8 @@ const DEFAULT_PREFS: NotificationPrefsRow = {
   vibrate_on: true,
   custom_body: null,
   default_remind_minutes: 10,
+  daily_digest: true,
+  digest_minutes: 420,
 };
 
 // الكرون بس هو اللي بينادي بدون CORS (سيرفر لسيرفر)، لكن زرار "جرّب
@@ -207,10 +212,122 @@ async function handleCronTick(): Promise<Response> {
     }
   }
 
+  // إشعار محاضرات النهاردة — لوحده عشان فشله ما يوقفش تنبيهات المحاضرات.
+  // Today's lectures notification, kept apart so its failure never stops the
+  // lecture reminders.
+  let digests = 0;
+  try {
+    digests = await sendTodayDigests(now, prefsCache);
+  } catch (err) {
+    console.error("today digest failed", err);
+  }
+
   return new Response(
-    JSON.stringify({ checked: entries.length, due: due.length, sent, errors }),
+    JSON.stringify({ checked: entries.length, due: due.length, sent, errors, digests }),
     { headers: { "Content-Type": "application/json" } },
   );
+}
+
+/// بيبعت أو يحدّث أو يقفل إشعار "محاضرات النهاردة" لكل مستخدم عنده محاضرات
+/// النهاردة — شوف _shared/today_digest.ts.
+/// Sends, updates or closes the "today's lectures" notification for every
+/// user with lectures today; see _shared/today_digest.ts.
+async function sendTodayDigests(
+  now: Date,
+  prefsCache: Map<string, NotificationPrefsRow>,
+): Promise<number> {
+  const { weekday, minutes } = cairoWallClock(now);
+  const day = cairoDay(now);
+
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/schedule_entries?select=id,user_id,title,location,session_type,start_minutes,end_minutes&weekday=eq.${weekday}`,
+    { headers: restHeaders() },
+  );
+  if (!res.ok) {
+    console.error("fetch today's entries failed", res.status, await res.text());
+    return 0;
+  }
+  const rows: (DigestEntry & { user_id: string })[] = await res.json();
+
+  const byUser = new Map<string, DigestEntry[]>();
+  for (const row of rows) {
+    const list = byUser.get(row.user_id) ?? [];
+    list.push(row);
+    byUser.set(row.user_id, list);
+  }
+
+  let sent = 0;
+  for (const [userId, entries] of byUser) {
+    if (!prefsCache.has(userId)) prefsCache.set(userId, await fetchPrefsAsService(userId));
+    const prefs = prefsCache.get(userId)!;
+    if (prefs.daily_digest === false) continue;
+
+    const event = digestEvent(entries, minutes, prefs.digest_minutes ?? 420);
+    if (!event) continue;
+    // "اقفل" لإشعار عمره ما اتبعت ملوش لازمة — وكروم بيعرض إشعار عام لو push
+    // وصل ومفيش حاجة اتعرضت.
+    // "Close" for a notification never sent is pointless, and Chrome shows a
+    // generic notice when a push arrives and nothing is displayed.
+    if (event.push.close && !(await digestSentToday(userId, day))) continue;
+    if (!(await claimDigest(userId, day, event.key))) continue;
+
+    const subs = await fetchSubscriptionsAsService(userId);
+    for (const sub of subs) {
+      try {
+        // ساعة: لو الموبايل كان مقفول الصبح، يوصل أول ما يفتح.
+        // An hour: if the phone was off in the morning, it arrives once on.
+        await sendWebPush(sub, event.push, 3600);
+        sent++;
+      } catch (err) {
+        if (err instanceof PushGoneError) {
+          await deleteSubscriptionAsService(sub.id);
+        } else {
+          console.error("digest push failed", userId, sub.id, err);
+        }
+      }
+    }
+  }
+  return sent;
+}
+
+/// تاريخ النهاردة بتوقيت القاهرة (YYYY-MM-DD).
+/// Today's date in Cairo time (YYYY-MM-DD).
+function cairoDay(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+async function digestSentToday(userId: string, day: string): Promise<boolean> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/push_digest_sent?select=event&user_id=eq.${userId}&day=eq.${day}&limit=1`,
+    { headers: restHeaders() },
+  );
+  if (!res.ok) return false;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+/// نفس فكرة claimReminder: الصف بيتحط مرة واحدة، واللي بعده بيلاقيه موجود.
+/// The same idea as claimReminder: the row goes in once; later calls find it.
+async function claimDigest(userId: string, day: string, event: string): Promise<boolean> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/push_digest_sent?on_conflict=user_id,day,event`,
+    {
+      method: "POST",
+      headers: { ...restHeaders(), Prefer: "resolution=ignore-duplicates,return=representation" },
+      body: JSON.stringify([{ user_id: userId, day, event }]),
+    },
+  );
+  if (!res.ok) {
+    console.error("claimDigest failed", res.status, await res.text());
+    return false;
+  }
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 /// زرار "جرّب الإشعار": بيبعت تنبيه تجربة بس على اشتراكات المستخدم اللي

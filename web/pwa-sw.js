@@ -178,6 +178,18 @@ self.addEventListener("push", (event) => {
     data = {};
   }
 
+  // "اقفل": إشعار محاضرات النهاردة بعد آخر محاضرة — بيتشال بدل ما يتعرض جديد.
+  // "Close": today's lectures notification after the last lecture, removed
+  // instead of a new one being shown.
+  if (data.close && data.tag) {
+    event.waitUntil(
+      self.registration.getNotifications({ tag: data.tag }).then((list) => {
+        for (const n of list) n.close();
+      }),
+    );
+    return;
+  }
+
   const title = data.title || "مساعد المذاكرة";
   const options = {
     body: data.body || "",
@@ -188,7 +200,10 @@ self.addEventListener("push", (event) => {
     // If two notifications ever share a tag (shouldn't happen now — each
     // occurrence gets a unique tag server-side), renotify makes sure the new
     // one still alerts/vibrates instead of silently replacing the old one.
-    renotify: true,
+    // إشعار محاضرات النهاردة بيبعت false: التحديث يحل محل القديم بهدوء.
+    // Today's lectures notification sends false: the update quietly replaces
+    // the old one.
+    renotify: data.renotify !== false && !!data.tag,
     icon: "icons/Icon-192.png",
     badge: "icons/Icon-192.png",
     silent: !!data.silent,
