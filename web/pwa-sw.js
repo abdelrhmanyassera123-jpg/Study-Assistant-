@@ -207,7 +207,6 @@ self.addEventListener("push", (event) => {
     icon: "icons/Icon-192.png",
     badge: "icons/Icon-192.png",
     silent: !!data.silent,
-    vibrate: Array.isArray(data.vibrate) ? data.vibrate : [200, 100, 200],
     data: {
       url: data.url || "./",
       actions: Array.isArray(data.actions) ? data.actions : [],
@@ -218,7 +217,28 @@ self.addEventListener("push", (event) => {
     })),
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  // الإشعار الصامت مينفعش يبقى معاه اهتزاز: المتصفح بيرفضه كله ومش بيظهر
+  // حاجة (ده اللي كان مخبّي إشعار محاضرات النهاردة). الاهتزاز للمسموع بس.
+  // A silent notification may not carry a vibration: the browser rejects the
+  // whole thing and shows nothing (which is what hid today's lectures
+  // notification). Vibration is for audible ones only.
+  if (!options.silent) {
+    options.vibrate = Array.isArray(data.vibrate) ? data.vibrate : [200, 100, 200];
+  }
+
+  // لو المتصفح رفض أي اختيار تاني، الإشعار يظهر بالأساسيات بدل ما يضيع.
+  // Should the browser reject any other option, the notification still shows
+  // with the basics instead of being lost.
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch(() =>
+      self.registration.showNotification(title, {
+        body: options.body,
+        tag: options.tag,
+        icon: options.icon,
+        data: options.data,
+      })
+    ),
+  );
 });
 
 // دوس على التنبيه يفتح تاب موجود أو تاب جديد على التطبيق.
