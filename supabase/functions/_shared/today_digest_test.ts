@@ -25,28 +25,47 @@ register("nothing before the morning time", () => {
   eq(digestEvent(day, 6 * 60 + 59, 7 * 60), null);
 });
 
-register("the morning lists the whole day, next lecture first", () => {
+register("the morning names the first lecture and carries the whole day", () => {
   const event = digestEvent(day, 7 * 60, 7 * 60)!;
   eq(event.key, "morning");
-  eq(event.push.title, "محاضرات النهاردة (3)");
-  eq(event.push.body.split("\n")[0], "9:00 ص–10:30 ص · تشريح — سكشن · قاعة 5");
-  eq(event.push.body.split("\n").length, 3);
+  eq(event.push.title, "محاضرات النهاردة: 3");
+  eq(event.push.body, "أولها 9:00 ص · تشريح — سكشن · قاعة 5");
+  eq(event.push.table!.map((r) => r.state), ["next", "later", "later"]);
+  eq(event.push.table![0], { start: "9:00 ص", end: "10:30 ص", title: "تشريح — سكشن", room: "قاعة 5", state: "next" });
   eq(event.push.tag, DIGEST_TAG);
   eq(event.push.silent, true);
 });
 
-register("a lecture under way is marked and the finished one drops off", () => {
+register("a lecture under way leads, with when it ends and what follows", () => {
   const during = digestEvent(day, 12 * 60 + 10, 7 * 60)!;
   eq(during.key, "start:b");
-  eq(during.push.title, "باقي النهاردة (2)");
-  eq(during.push.body.split("\n")[0].startsWith("▶ دلوقتي: 12:00 م"), true);
-  eq(during.push.body.includes("تشريح"), false);
+  eq(during.push.title, "▶ فسيولوجي");
+  eq(during.push.body, "دلوقتي لحد 1:30 م · مدرج 2 · بعدها 2:00 م");
+  eq(during.push.table!.map((r) => r.state), ["done", "now", "later"]);
+});
+
+// في البريك ما بين محاضرتين الإشعار يقول "الجاية"، مش "دلوقتي" لحاجة خلصت.
+// In a break between two lectures it says "next", not "now" for one over.
+register("a break between lectures points to the next one", () => {
+  const gap = digestEvent(day, 11 * 60, 7 * 60)!;
+  eq(gap.key, "end:a");
+  eq(gap.push.title, "الجاية: فسيولوجي");
+  eq(gap.push.body, "الساعة 12:00 م · مدرج 2 · فاضل 2");
+  eq(gap.push.table!.map((r) => r.state), ["done", "next", "later"]);
+});
+
+register("back-to-back lectures: the one starting wins the minute", () => {
+  const tight: DigestEntry[] = [
+    { id: "p", title: "أ", location: "", start_minutes: 600, end_minutes: 660 },
+    { id: "q", title: "ب", location: "", start_minutes: 660, end_minutes: 720 },
+  ];
+  eq(digestEvent(tight, 660, 420)!.key, "start:q");
 });
 
 register("a lecture with no end time is given an hour and a half", () => {
   const last = digestEvent(day, 14 * 60 + 5, 7 * 60)!;
-  eq(last.push.title, "آخر محاضرة النهاردة");
-  eq(last.push.body, "▶ دلوقتي: 2:00 م · كيمياء");
+  eq(last.push.title, "▶ كيمياء");
+  eq(last.push.body, "دلوقتي لحد 3:30 م · آخر محاضرة");
   eq(digestEvent(day, 15 * 60 + 29, 7 * 60)!.key, "start:c");
 });
 

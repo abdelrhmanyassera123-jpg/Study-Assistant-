@@ -18,6 +18,10 @@
 // file is entirely separate and exists only to stay registered and satisfy
 // that check — it has nothing to do with Flutter's own caching or updates.
 
+// رسم جدول محاضرات النهاردة جوه الإشعار.
+// Draws today's lectures table inside the notification.
+importScripts("digest_table.js");
+
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
@@ -229,16 +233,32 @@ self.addEventListener("push", (event) => {
   // لو المتصفح رفض أي اختيار تاني، الإشعار يظهر بالأساسيات بدل ما يضيع.
   // Should the browser reject any other option, the notification still shows
   // with the basics instead of being lost.
-  event.waitUntil(
-    self.registration.showNotification(title, options).catch(() =>
-      self.registration.showNotification(title, {
+  event.waitUntil((async () => {
+    // إشعار محاضرات النهاردة: الجدول بيترسم صورة بتظهر لما الإشعار يتفتح
+    // (digest_table.js). لو الرسم فشل، الإشعار بيطلع بالنص بس.
+    // Today's lectures notification: the table is drawn as a picture shown
+    // when the notification is expanded (digest_table.js). If drawing fails,
+    // the notification goes out with its text only.
+    if (Array.isArray(data.table)) {
+      try {
+        const image = await drawDigestTable(data.table);
+        if (image) options.image = image;
+      } catch (e) {
+        // النص لوحده كفاية.
+        // The text alone will do.
+      }
+    }
+    try {
+      await self.registration.showNotification(title, options);
+    } catch (e) {
+      await self.registration.showNotification(title, {
         body: options.body,
         tag: options.tag,
         icon: options.icon,
         data: options.data,
-      })
-    ),
-  );
+      });
+    }
+  })());
 });
 
 // دوس على التنبيه يفتح تاب موجود أو تاب جديد على التطبيق.

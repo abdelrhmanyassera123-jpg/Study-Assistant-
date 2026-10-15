@@ -45,6 +45,20 @@ export interface DigestPush {
   renotify: boolean;
   url: string;
   close?: boolean;
+  /// صفوف الجدول اللي بيترسم صورة لما الإشعار يتفتح (web/pwa-sw.js).
+  /// The table rows drawn as a picture when the notification is expanded
+  /// (web/pwa-sw.js).
+  table?: DigestRow[];
+}
+
+export interface DigestRow {
+  start: string;
+  end: string;
+  title: string;
+  room: string;
+  /// خلصت، شغالة، الجاية، أو بعد كده.
+  /// Over, under way, up next, or later.
+  state: "done" | "now" | "next" | "later";
 }
 
 export interface DigestEvent {
@@ -97,41 +111,85 @@ export function digestEvent(
     };
   }
 
-  const started = list.filter((e) => e.start_minutes <= nowMinutes);
-  const key = started.length === 0 ? "morning" : `start:${started[started.length - 1].id}`;
+  // آخر حد اتعدّى: بداية محاضرة أو نهايتها. النهاية مهمة كمان عشان في
+  // البريك بين محاضرتين الإشعار يقول "الجاية" مش "دلوقتي" لحاجة خلصت.
+  // The latest boundary passed: a lecture's start or its end. The end
+  // matters too, so in a break between two lectures it says "next" rather
+  // than "now" for one already over.
+  let key = "morning";
+  let at = -1;
+  for (const e of list) {
+    // محاضرة بتبدأ في نفس دقيقة نهاية اللي قبلها بتكسب: هي اللي شغالة.
+    // A lecture starting the minute the last one ends wins: it is under way.
+    if (e.start_minutes <= nowMinutes && e.start_minutes >= at) {
+      at = e.start_minutes;
+      key = `start:${e.id}`;
+    }
+    if (endOf(e) <= nowMinutes && endOf(e) > at) {
+      at = endOf(e);
+      key = `end:${e.id}`;
+    }
+  }
   return { key, push: digestPush(list, nowMinutes) };
 }
 
-/// محتوى الإشعار: العنوان، وكل محاضرة فاضلة في سطر — السطر الأول هو اللي
-/// بيبان والإشعار مقفول، فهو المحاضرة الجاية (أو اللي شغالة).
-/// The notification's content: a title, and one line per lecture still to
-/// come. The first line is what shows while it is collapsed, so it is the
-/// next lecture (or the one under way).
+/// محتوى الإشعار. وهو مقفول بيبان سطرين بس، فهما للحاجة الوحيدة اللي محتاج
+/// تعرفها دلوقتي: اللي شغالة أو الجاية، ولحد إمتى، وفين. لما يتفتح، اليوم
+/// كله بيظهر جدول مرسوم (table) — اللي خلص باهت واللي شغال متلوّن.
+/// The notification's content. Collapsed it shows two lines only, so they
+/// hold the one thing needed right now: what is under way or next, until
+/// when, and where. Expanded, the whole day shows as a drawn table (table):
+/// what is over faded, what is under way highlighted.
 export function digestPush(entries: DigestEntry[], nowMinutes: number): DigestPush {
-  const left = entries
-    .filter((e) => endOf(e) > nowMinutes)
-    .sort((a, b) => a.start_minutes - b.start_minutes);
-  const allToday = entries.length;
+  const list = [...entries].sort((a, b) => a.start_minutes - b.start_minutes);
+  const current = list.find((e) => e.start_minutes <= nowMinutes && endOf(e) > nowMinutes);
+  const upcoming = list.filter((e) => e.start_minutes > nowMinutes);
+  const next = upcoming[0];
+  const left = list.filter((e) => endOf(e) > nowMinutes).length;
 
-  const lines = left.map((e) => {
-    const now = e.start_minutes <= nowMinutes;
-    const what = [e.title.trim(), (e.session_type ?? "").trim()].filter(Boolean).join(" — ");
-    const where = e.location.trim();
-    const time = e.end_minutes == null
-      ? clock(e.start_minutes)
-      : `${clock(e.start_minutes)}–${clock(e.end_minutes)}`;
-    return `${now ? "▶ دلوقتي: " : ""}${time} · ${what}${where ? ` · ${where}` : ""}`;
-  });
+  const name = (e: DigestEntry) =>
+    [e.title.trim(), (e.session_type ?? "").trim()].filter(Boolean).join(" — ");
+  const room = (e: DigestEntry) => e.location.trim();
+  const parts = (...p: string[]) => p.filter(Boolean).join(" · ");
 
-  const title = left.length === allToday
-    ? `محاضرات النهاردة (${allToday})`
-    : left.length === 1
-    ? "آخر محاضرة النهاردة"
-    : `باقي النهاردة (${left.length})`;
+  let title: string;
+  let body: string;
+  if (current) {
+    title = `▶ ${name(current)}`;
+    body = parts(
+      `دلوقتي لحد ${clock(endOf(current))}`,
+      room(current),
+      next ? `بعدها ${clock(next.start_minutes)}` : "آخر محاضرة",
+    );
+  } else if (next) {
+    const morning = upcoming.length === list.length;
+    title = morning ? `محاضرات النهاردة: ${list.length}` : `الجاية: ${name(next)}`;
+    body = morning
+      ? parts(`أولها ${clock(next.start_minutes)}`, name(next), room(next))
+      : parts(`الساعة ${clock(next.start_minutes)}`, room(next), `فاضل ${left}`);
+  } else {
+    title = "خلصت محاضرات النهاردة";
+    body = "";
+  }
+
+  const highlight = current ?? next;
+  const table: DigestRow[] = list.map((e) => ({
+    start: clock(e.start_minutes),
+    end: clock(endOf(e)),
+    title: name(e),
+    room: room(e),
+    state: endOf(e) <= nowMinutes
+      ? "done"
+      : e === current
+      ? "now"
+      : e === highlight
+      ? "next"
+      : "later",
+  }));
 
   return {
     title,
-    body: lines.join("\n"),
+    body,
     tag: DIGEST_TAG,
     // إشعار معلومة مش منبّه: من غير صوت، والتحديث بيحل محل القديم بهدوء.
     // Information, not an alarm: no sound, and each update quietly replaces
@@ -139,6 +197,7 @@ export function digestPush(entries: DigestEntry[], nowMinutes: number): DigestPu
     silent: true,
     renotify: false,
     url: "./?open=schedule",
+    table,
   };
 }
 
