@@ -94,6 +94,60 @@ function workerUser(req: Request): string | null {
   return /^[0-9a-f-]{36}$/i.test(userId) ? userId : null;
 }
 
+/// الحسابات اللي اشتراكها اتأكد قريب — رفع ملف كبير بييجي على أجزاء كتير،
+/// ومش لازم كل جزء يسأل الداتابيز. الإيقاف بيوصل هنا في خلال نص دقيقة.
+/// Accounts whose subscription was confirmed recently: a large upload
+/// arrives in many pieces, and each need not ask the database. A switch-off
+/// reaches here within half a minute.
+const allowedUsers = new Map<string, number>();
+
+async function subscriptionAllows(userId: string): Promise<boolean> {
+  const until = allowedUsers.get(userId);
+  if (until && until > Date.now()) return true;
+  const result = await callAiAllow(userId, false);
+  // لو الداتابيز نفسها مش راده، منقفلش على الناس بسببنا.
+  // If the database itself does not answer, nobody is locked out over it.
+  if (result === null) return true;
+  if (result) {
+    if (allowedUsers.size > 1000) allowedUsers.clear();
+    allowedUsers.set(userId, Date.now() + 30_000);
+  }
+  return result;
+}
+
+/// بيعدّ نداء موديل للحساب ده (للمعلومة في لوحة التحكم) — من غير ما يستناه.
+/// Counts one model call for this account (shown in the dashboard), without
+/// waiting for it.
+function countAiCall(userId: string): void {
+  callAiAllow(userId, true).catch(() => {});
+}
+
+async function callAiAllow(userId: string, count: boolean): Promise<boolean | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceKey) return null;
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/ai_allow`, {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_user: userId, p_count: count }),
+    });
+    if (!res.ok) {
+      console.error("ai_allow failed", res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return data?.ok === true;
+  } catch (err) {
+    console.error("ai_allow failed", err);
+    return null;
+  }
+}
+
 /// بيدوّر على مفتاح Gemini شخصي للمستخدم اللي بينادي، من جدول
 /// "user_api_keys" — بيرجّع null لو مالوش مفتاح شخصي محفوظ.
 ///
@@ -993,8 +1047,20 @@ Deno.serve(async (req: Request) => {
     return json({ error: "POST only" }, 405);
   }
 
-  if (!workerUser(req) && !(await signedInUser(req))) {
+  const userId = workerUser(req) ?? (await signedInUser(req));
+  if (!userId) {
     return json({ error: "لازم تكون مسجّل دخول." }, 401);
+  }
+  // من غير اشتراك شغال مفيش ولا طلب — حتى لو حد اتحايل على شاشة الكود في
+  // التطبيق. ده بيغطي العامل كمان، لأنه بيعدّي من هنا بالنيابة عن صاحب الشغل.
+  // No live subscription, no request at all, even if someone got past the
+  // app's code screen. This covers the worker too, which comes through here
+  // on the job owner's behalf.
+  if (!(await subscriptionAllows(userId))) {
+    return json({
+      error: "اشتراكك مش شغال — فعّل كود من التطبيق.",
+      code: "no_subscription",
+    }, 403);
   }
 
   // مفتاح المستخدم الشخصي (لو محطوط) بيتقدّم على المفتاح المشترك — بيستهلك
@@ -1076,6 +1142,7 @@ Deno.serve(async (req: Request) => {
 
     if (body.action === "summarize") {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
+      countAiCall(userId);
       return await streamSummary(
         apiKey,
         await candidatesFor(apiKey, body.model),
@@ -1088,6 +1155,7 @@ Deno.serve(async (req: Request) => {
 
     if (body.action === "json") {
       if (!body.prompt) return json({ error: "prompt is required" }, 400);
+      countAiCall(userId);
       const files = body.files ?? (body.file ? [body.file] : undefined);
       // نداءات الملفات (جدول، تحليل شكل) قيسناها حقيقي: موديل واحد بيرد في
       // ~117 ثانية، لكن لو الأول فشل **بعد ما استهلك وقته بمحاولة حقيقية

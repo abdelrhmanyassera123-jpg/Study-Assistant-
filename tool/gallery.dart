@@ -16,8 +16,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:study_assistant/core/app_theme.dart';
 import 'package:study_assistant/core/l10n.dart';
 import 'package:study_assistant/core/share_target.dart';
+import 'package:study_assistant/data/access.dart';
 import 'package:study_assistant/data/offline_sync.dart';
 import 'package:study_assistant/data/providers.dart';
+import 'package:study_assistant/features/auth/activation_page.dart';
 import 'package:study_assistant/features/auth/login_page.dart';
 import 'package:study_assistant/features/flashcards/review_page.dart';
 import 'package:study_assistant/features/home/home_shell.dart';
@@ -212,6 +214,18 @@ final _samples = [
 
 /// قسم مبدئي ثابت عشان نفتح أي صفحة مباشرة من الرابط.
 /// A fixed starting section so any page can be opened straight from the URL.
+/// اشتراك بكود فاضله 5 أيام — عشان كارت الاشتراك في الإعدادات يبان.
+/// A code subscription with 5 days left, so the settings card shows.
+class _FixedAccess extends AccessNotifier {
+  @override
+  Future<Access> build() async => Access(
+        active: true,
+        reason: 'ok',
+        source: 'code',
+        endsAt: DateTime.now().add(const Duration(days: 4, hours: 20)),
+      );
+}
+
 class _FixedSection extends SectionNotifier {
   _FixedSection(this.initial);
 
@@ -268,6 +282,7 @@ Future<void> main() async {
         sectionProvider.overrideWith(() => _FixedSection(section)),
         currentUserIdProvider.overrideWithValue('demo'),
         offlineSyncProvider.overrideWithValue(null),
+        accessProvider.overrideWith(_FixedAccess.new),
       ],
       child: _GalleryApp(screen: screen, lang: lang, theme: theme, scale: scale),
     ),
@@ -312,6 +327,9 @@ class _GalleryApp extends StatelessWidget {
       ),
       home: switch (screen) {
         'login' => const LoginPage(),
+        'activation' => ActivationPage(
+            access: Access(active: false, reason: 'expired', source: 'code', endsAt: DateTime.now().subtract(const Duration(days: 1))),
+          ),
         'settings' => const SettingsPage(),
         'samples' => const StyleSamplesPage(),
         'review' => ReviewPage(queue: _cards),

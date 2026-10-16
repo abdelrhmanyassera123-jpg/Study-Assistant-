@@ -7,6 +7,7 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/push.dart';
 import '../../core/settings.dart';
+import '../../data/access.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/common.dart';
@@ -38,6 +39,8 @@ class SettingsPage extends ConsumerWidget {
             // "who am I signed in as?".
             const SizedBox(height: Insets.sm),
             const _AccountCard(),
+            const SizedBox(height: Insets.md),
+            const _SubscriptionCard(),
 
             SectionHeader(l.appearance, subtitle: l.appearanceHint),
             AppCard(
@@ -593,6 +596,127 @@ class _AccountCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// حالة الاشتراك، وزرار يفعّل كود جديد يزوّد الأيام قبل ما تخلص.
+/// The subscription's state, and a button to enter a new code that adds days
+/// before they run out.
+class _SubscriptionCard extends ConsumerWidget {
+  const _SubscriptionCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+    final access = ref.watch(accessProvider).value;
+    if (access == null) return const SizedBox.shrink();
+    final open = access.isAdmin || (access.source == 'legacy' && access.endsAt == null);
+
+    return AppCard(
+      child: Row(
+        children: [
+          Icon(Icons.workspace_premium_outlined, color: scheme.primary),
+          const SizedBox(width: Insets.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l.subscription, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 2),
+                Text(
+                  l.subscriptionStatus(
+                    reason: access.reason,
+                    source: access.source,
+                    endsAt: access.endsAt,
+                    daysLeft: access.daysLeft,
+                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          if (!open)
+            TextButton(
+              onPressed: () => showDialog<void>(context: context, builder: (_) => const _RedeemDialog()),
+              child: Text(l.enterCode),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RedeemDialog extends ConsumerStatefulWidget {
+  const _RedeemDialog();
+
+  @override
+  ConsumerState<_RedeemDialog> createState() => _RedeemDialogState();
+}
+
+class _RedeemDialogState extends ConsumerState<_RedeemDialog> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _redeem() async {
+    final l = context.l;
+    if (_code.text.trim().isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await redeemCode(ref, _code.text);
+      if (!mounted) return;
+      if (result.error == null) {
+        Navigator.pop(context);
+        showSnack(context, l.activated(result.endsAt));
+      } else {
+        setState(() => _error = l.redeemError(result.error!));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = l.redeemFailed);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    return AlertDialog(
+      title: Text(l.enterCode),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _code,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            textCapitalization: TextCapitalization.characters,
+            textDirection: TextDirection.ltr,
+            decoration: const InputDecoration(hintText: 'SA-XXXX-XXXX'),
+            onSubmitted: (_) => _busy ? null : _redeem(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: Insets.md),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(l.cancel)),
+        FilledButton(onPressed: _busy ? null : _redeem, child: Text(l.activateButton)),
+      ],
     );
   }
 }

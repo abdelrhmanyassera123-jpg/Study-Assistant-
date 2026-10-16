@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/access.dart';
 import '../../data/providers.dart';
 import '../home/home_shell.dart';
+import 'activation_page.dart';
 import 'login_page.dart';
 
 /// بيوجّه المستخدم: مسجل دخول -> التطبيق، مش مسجل -> شاشة الدخول.
@@ -21,7 +23,7 @@ class AuthGate extends ConsumerWidget {
         final user = ref.watch(supabaseProvider).auth.currentUser;
         return user == null
             ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-            : const HomeShell();
+            : const _SubscriptionGate();
       },
       // الخطأ هنا غالبًا فشل تجديد الجلسة من غير نت (التوكن بيخلص بعد ساعة)،
       // والمكتبة بتسيب الجلسة المحفوظة زي ما هي. لو فيه مستخدم، نفتح التطبيق
@@ -32,9 +34,32 @@ class AuthGate extends ConsumerWidget {
       // login screen they cannot get past offline.
       error: (_, _) => ref.watch(supabaseProvider).auth.currentUser == null
           ? const LoginPage()
-          : const HomeShell(),
+          : const _SubscriptionGate(),
       data: (state) =>
-          state.session == null ? const LoginPage() : const HomeShell(),
+          state.session == null ? const LoginPage() : const _SubscriptionGate(),
+    );
+  }
+}
+
+/// مسجّل دخول: التطبيق لو الاشتراك شغال، وإلا شاشة الكود. لو الأدمن قفل
+/// الاشتراك والتطبيق مفتوح، الشاشة بتتبدّل في نفس اللحظة (accessProvider).
+/// Signed in: the app with a live subscription, otherwise the code screen.
+/// If the admin switches it off with the app open, the screen changes that
+/// moment (accessProvider).
+class _SubscriptionGate extends ConsumerWidget {
+  const _SubscriptionGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final access = ref.watch(accessProvider);
+    return access.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      // أي عطل غير متوقع ما يقفلش على حد — السيرفر بيرفض الذكاء الاصطناعي
+      // لأي حد مالوش اشتراك على أي حال.
+      // An unexpected failure locks nobody out: the server refuses AI to
+      // anyone without a subscription anyway.
+      error: (_, _) => const HomeShell(),
+      data: (a) => a.active ? const HomeShell() : ActivationPage(access: a),
     );
   }
 }

@@ -1336,7 +1336,8 @@ class GeminiSummarizer implements Summarizer {
   }
 
   String _statusMessage(int status) => switch (status) {
-        401 || 403 => 'الخدمة رفضت الطلب — سجّل خروج ودخول تاني.',
+        401 => 'الخدمة رفضت الطلب — سجّل خروج ودخول تاني.',
+        403 => 'اشتراكك مش شغال — فعّل كود من الإعدادات.',
         404 => config.isAuto
             ? 'مفيش موديل متاح لمفتاحك دلوقتي.'
             : 'الموديل "${config.model}" مش متاح لمفتاحك.',

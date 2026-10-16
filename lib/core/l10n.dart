@@ -739,6 +739,73 @@ class AppL10n {
         'الشرايح أغلبها صور، فهتتبعت $count صورة للموديل يقراها.',
         'The slides are mostly pictures, so $count of them go to the model to read.',
       );
+  // ------------------------------------------------- الاشتراك / subscription
+  static String _day(DateTime? d) => d == null ? '' : '${d.day}/${d.month}/${d.year}';
+
+  String get activateTitle => _('فعّل اشتراكك', 'Activate your subscription');
+  String activateReason(String reason, DateTime? endsAt) => switch (reason) {
+        'expired' => _(
+            'اشتراكك خلص يوم ${_day(endsAt)}. فعّل كود جديد عشان تكمّل.',
+            'Your subscription ended on ${_day(endsAt)}. Enter a new code to carry on.',
+          ),
+        'disabled' => _(
+            'اشتراكك اتوقف. اطلب كود جديد من صاحب التطبيق.',
+            'Your subscription was switched off. Ask the app owner for a new code.',
+          ),
+        _ => _(
+            'محتاج كود تفعيل عشان تستخدم التطبيق.',
+            'You need an activation code to use the app.',
+          ),
+      };
+  String get activateButton => _('فعّل', 'Activate');
+  String get activateHowToGet => _(
+        'الكود شكله SA-XXXX-XXXX، ومش مهم تكتبه كابيتال ولا سمول. اطلب كودك من صاحب التطبيق.',
+        'Codes look like SA-XXXX-XXXX, in any letter case. Ask the app owner for yours.',
+      );
+  String activated(DateTime? endsAt) => _(
+        'اتفعّل! اشتراكك شغال لحد ${_day(endsAt)}.',
+        'Activated! Your subscription runs until ${_day(endsAt)}.',
+      );
+  String get redeemFailed =>
+      _('التفعيل فشل — اتأكد من النت وجرّب تاني.', 'Activation failed — check your connection and try again.');
+  String redeemError(String code) => switch (code) {
+        'invalid' => _('الكود ده مش صحيح — اتأكد منه.', 'That code is not valid — check it.'),
+        'used' => _('الكود ده اتستخدم قبل كده.', 'That code has already been used.'),
+        'already_yours' => _('الكود ده متفعّل على حسابك بالفعل.', 'That code is already on your account.'),
+        'disabled' => _('الكود ده متوقف.', 'That code has been switched off.'),
+        'code_expired' => _('الكود ده انتهت صلاحيته.', 'That code has expired.'),
+        'trial_used' => _(
+            'استخدمت الفترة التجريبية قبل كده — محتاج كود مدفوع.',
+            'You have used your trial already — you need a paid code.',
+          ),
+        'not_needed' => _('حسابك مفتوح من غير اشتراك — مش محتاج كود.', 'Your account is open without a code.'),
+        'too_many_attempts' => _(
+            'محاولات غلط كتير — استنى ساعة وجرّب تاني.',
+            'Too many wrong tries — wait an hour and try again.',
+          ),
+        'signed_out' => _('سجّل دخول الأول.', 'Sign in first.'),
+        _ => redeemFailed,
+      };
+  String get subscription => _('الاشتراك', 'Subscription');
+  String subscriptionStatus({
+    required String reason,
+    String? source,
+    DateTime? endsAt,
+    int? daysLeft,
+  }) {
+    if (reason == 'admin') return _('أدمن — مفتوح من غير نهاية.', 'Admin — open with no end.');
+    if (reason == 'unknown') return _('مش قادر أتأكد دلوقتي (مفيش نت).', 'Cannot check right now (offline).');
+    if (endsAt == null) {
+      return source == 'legacy'
+          ? _('حسابك مفتوح مجانًا من غير نهاية.', 'Your account is open, free, with no end.')
+          : _('مفتوح من غير نهاية.', 'Open with no end.');
+    }
+    return _(
+      'شغال لحد ${_day(endsAt)} — فاضل ${daysLeft ?? 0} ${daysLeft == 1 ? 'يوم' : 'أيام'}.',
+      'Active until ${_day(endsAt)} — ${daysLeft ?? 0} day${daysLeft == 1 ? '' : 's'} left.',
+    );
+  }
+  String get enterCode => _('فعّل كود', 'Enter a code');
   String get dailyDigest => _('إشعار محاضرات النهاردة', "Today's lectures notification");
   String get dailyDigestHint => _(
         'إشعار واحد أول اليوم فيه محاضراتك، بيتحدّث من غير صوت مع كل محاضرة وبيختفي بعد آخرها.',
