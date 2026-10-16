@@ -111,8 +111,28 @@ class AccessNotifier extends AsyncNotifier<Access> {
         _scheduleEnd(access);
         return access;
       }
-      return const Access(active: true, reason: 'unknown');
+      // مفيش نسخة محفوظة والسؤال فشل. الحساب القديم (قبل الاشتراكات) بيفتح —
+      // كان مفتوح قبل كده ومش عايزينه يتقفل بسبب نت ضعيف. الحساب الجديد لأ:
+      // ده بالظبط اللي كان بيعدّي من غير كود.
+      // No saved copy and the question failed. An account from before
+      // subscriptions opens: it was open before, and weak signal should not
+      // lock it. A new one does not: that is exactly what slipped in without
+      // a code.
+      _timer?.cancel();
+      _timer = Timer(const Duration(seconds: 15), refresh);
+      return _predatesSubscriptions(ref.read(supabaseProvider).auth.currentUser?.createdAt)
+          ? const Access(active: true, reason: 'unknown')
+          : const Access(active: false, reason: 'unchecked');
     }
+  }
+
+  /// يوم ما الاشتراكات اشتغلت — كل الحسابات اللي قبله اتعملها اشتراك مجاني.
+  /// The day subscriptions started; every account before it got a free one.
+  static final _subscriptionsStarted = DateTime.utc(2026, 10, 16);
+
+  static bool _predatesSubscriptions(String? createdAt) {
+    final created = createdAt == null ? null : DateTime.tryParse(createdAt);
+    return created != null && created.isBefore(_subscriptionsStarted);
   }
 
   /// بيسأل السيرفر تاني دلوقتي — بعد تفعيل كود مثلًا.

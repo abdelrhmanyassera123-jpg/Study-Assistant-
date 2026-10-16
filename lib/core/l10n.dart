@@ -752,6 +752,10 @@ class AppL10n {
             'اشتراكك اتوقف. اطلب كود جديد من صاحب التطبيق.',
             'Your subscription was switched off. Ask the app owner for a new code.',
           ),
+        'unchecked' => _(
+            'مش قادر أتأكد من اشتراكك دلوقتي — اتأكد من النت. لو معاك كود اكتبه هنا.',
+            'Cannot check your subscription right now — check your connection. If you have a code, enter it here.',
+          ),
         _ => _(
             'محتاج كود تفعيل عشان تستخدم التطبيق.',
             'You need an activation code to use the app.',

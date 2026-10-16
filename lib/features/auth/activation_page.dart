@@ -110,6 +110,12 @@ class _ActivationPageState extends ConsumerState<ActivationPage> {
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: Insets.lg),
+                  if (widget.access.reason == 'unchecked')
+                    OutlinedButton.icon(
+                      onPressed: () => ref.read(accessProvider.notifier).refresh(),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(l.retry),
+                    ),
                   TextButton(
                     onPressed: () => ref.read(supabaseProvider).auth.signOut(),
                     child: Text('${l.signOut} ($email)'),
