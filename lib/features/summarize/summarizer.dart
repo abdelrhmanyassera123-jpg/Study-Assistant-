@@ -357,6 +357,26 @@ abstract class Summarizer {
     void Function(int chunk, int totalChunks)? onChunk,
   });
 
+  /// بيفهّم الطالب سؤال ويحله خطوة بخطوة، والشرح بيوصل وهو بيتكتب. لو فيه
+  /// محاضرة ([lectureText] أو [lectureFiles])، الحل بيمشي على طريقتها.
+  /// Makes a question clear to the student and solves it step by step,
+  /// streaming as it writes. With a lecture ([lectureText] or
+  /// [lectureFiles]), the solution follows its method.
+  ///
+  /// لو [history] مش فاضي ده سؤال متابعة ([followUp]) على حل اتعمل: من غير
+  /// ملفات، والحل اللي فات بيوصل كنص.
+  /// With [history], this is a follow-up ([followUp]) on a solution already
+  /// given: no files, the earlier solution travels as text.
+  Stream<String> solve({
+    required String question,
+    List<LectureFile> questionImages,
+    String lectureText,
+    List<LectureFile> lectureFiles,
+    List<AskTurn> history,
+    String followUp,
+    required bool arabic,
+  });
+
   /// بيعمل كروت مراجعة من محتوى مذاكرة.
   /// Builds review cards out of study material.
   Future<List<GeneratedCard>> makeCards(String source, {int count});

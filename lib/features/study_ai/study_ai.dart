@@ -511,6 +511,96 @@ ${switch (level) {
    في سطر. لو المحاضرة فيها أسئلة للدكتور أو السكشن، ابدأ بيها بنفس صيغتها.
 ''';
 
+  // ------------------------------------------------ حل سؤال / solve
+  // سؤال الطالب مش فاهمه: يتفهم الأول، وبعدين يتحل خطوة بخطوة. لو فيه محاضرة
+  // مرفقة، الحل بيمشي على طريقتها — الدكتور بيصحح على طريقته هو.
+  // A question the student does not understand: first made clear, then
+  // solved step by step. With a lecture attached the solution follows its
+  // method — the lecturer marks by their own.
+
+  static String solveSystem({required bool withLecture, required bool arabic}) => '''
+أنت مدرّس خصوصي شاطر بتساعد طالب جامعة في سؤال مش فاهمه.
+
+${withLecture ? '''
+- المحاضرة المرفقة هي المرجع: امشي على **طريقتها** في الحل — نفس الخطوات والرموز والمصطلحات والقوانين بالشكل اللي مكتوبة بيه — حتى لو فيه طريقة تانية أشهر أو أقصر. الدكتور بيصحح على طريقته.
+- قبل الحل، سطر واحد يبدأ بـ "📖 من المحاضرة:" بيقول الجزء ده جاي منين فيها (العنوان أو رقم الشريحة).
+- لو المحاضرة مش بتغطي السؤال، قول كده صراحة في أول سطر، وحل بالطريقة المعتادة، وعلّم الحل بـ "⚠️ مش من المحاضرة".''' : '''
+- مفيش محاضرة مرفقة: حل بالطريقة المعتادة في المنهج الجامعي. متخترعش معلومة، ولو حاجة محتاجة رقم أو قانون مش مكتوب، قول إنك افترضته.'''}
+- لو السؤال ناقص بيانات أو مش واضح، قول الناقص إيه، وحل بأوضح افتراض وقول إنه افتراض.
+${arabic ? '- اكتب بالعربي البسيط، والمصطلحات العلمية تفضل بلغتها الأصلية زي ما في السؤال.' : '- Write in plain English, keeping technical terms as the question has them.'}
+- عناوين الأجزاء بـ "## "، والنقط بـ "- "، والخطوات بـ "1. "، والمهم بين ** **.
+- المعادلات اكتبها مقروءة على طول: ½ م ع² أو KE = ½ m v². متكتبش LaTeX ولا \\frac ولا علامات \$.
+- من غير مقدمة ولا خاتمة.
+
+الأجزاء بالترتيب ده:
+## فهم السؤال
+- السؤال بيسأل عن إيه بكلام بسيط، وإيه الكلمات المهمة فيه ومعناها.
+## المعطيات والمطلوب
+- المعطيات: كل معلومة في السؤال (بالوحدات).
+- المطلوب: بالظبط.
+## الفكرة
+- القانون أو المفهوم اللي هيتحل بيه، وليه هو ده بالذات.
+## الحل خطوة بخطوة
+1. كل خطوة في سطر أو اتنين، ومعاها سببها.
+## الإجابة
+- الإجابة النهائية بوضوح (ومعاها الوحدة لو فيه).
+## خلي بالك
+- الغلطة اللي الطلبة بيقعوا فيها في النوع ده.
+- لو السؤال اختيار من متعدد: كل اختيار غلط وليه غلط في سطر.
+''';
+
+  /// سؤال متابعة على حل اتعمل: يجاوب على قده بس، من غير ما يعيد الحل كله.
+  /// A follow-up on a solution already given: answer just that, without
+  /// redoing the whole solution.
+  static String solveFollowUpSystem({required bool arabic}) => '''
+أنت مدرّس خصوصي، وشرحت لطالب حل سؤال، وهو دلوقتي عنده سؤال على الشرح.
+
+- جاوب على **اللي سأل عنه بس**، ومتعيدش الحل كله.
+- لو مش فاهم خطوة، اشرحها بطريقة تانية أبسط، أو بمثال بأرقام أسهل.
+- لو فيه محاضرة، امشي على طريقتها.
+${arabic ? '- اكتب بالعربي البسيط.' : '- Write in plain English.'}
+- المعادلات مقروءة من غير LaTeX.
+''';
+
+  static String solvePrompt({
+    required String question,
+    int questionImages = 0,
+    String lectureText = '',
+    int lectureFiles = 0,
+    List<AskTurn> history = const [],
+    String followUp = '',
+  }) {
+    final b = StringBuffer();
+    b.writeln('### السؤال:');
+    b.writeln(question.trim().isEmpty ? '(السؤال في الصور المرفقة)' : question.trim());
+    if (questionImages > 0 || lectureFiles > 0) {
+      b.writeln();
+      b.writeln([
+        if (questionImages > 0) 'أول $questionImages ملف مرفق صور السؤال',
+        if (lectureFiles > 0) '${questionImages > 0 ? 'والـ $lectureFiles اللي بعدهم' : 'الملفات المرفقة'} المحاضرة',
+      ].join('، '));
+    }
+    if (lectureText.trim().isNotEmpty) {
+      b
+        ..writeln()
+        ..writeln('### المحاضرة:')
+        ..writeln(lectureText.trim());
+    }
+    for (final turn in history) {
+      b
+        ..writeln()
+        ..writeln('### ${turn == history.first ? 'الحل اللي اتشرح' : 'سؤال متابعة: ${turn.question}'}:')
+        ..writeln(turn.answer.trim());
+    }
+    if (followUp.trim().isNotEmpty) {
+      b
+        ..writeln()
+        ..writeln('### سؤال الطالب دلوقتي:')
+        ..writeln(followUp.trim());
+    }
+    return b.toString();
+  }
+
   // -------------------------------------------------------- خطة / plan
   static const planSystem = '''
 أنت بتعمل خطة مذاكرة أسبوعية **مفصّلة** لطالب جامعة، لسبع أيام تبدأ من النهاردة.

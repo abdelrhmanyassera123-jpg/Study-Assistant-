@@ -236,4 +236,48 @@ void main() {
       expect(ask(StudyOutput.explain), contains('قانون أوم'));
     });
   });
+
+  group('solving a question', () {
+    // الدكتور بيصحح على طريقته: لو فيه محاضرة، الحل لازم يمشي عليها.
+    // The lecturer marks by their own method: with a lecture, the solution
+    // must follow it.
+    test('with a lecture, the solution follows its method and says where', () {
+      final system = StudyAiPrompts.solveSystem(withLecture: true, arabic: true);
+      expect(system, contains('طريقتها'));
+      expect(system, contains('📖 من المحاضرة:'));
+      expect(system, contains('⚠️ مش من المحاضرة'));
+    });
+
+    test('without one, it solves the usual way and flags assumptions', () {
+      final system = StudyAiPrompts.solveSystem(withLecture: false, arabic: true);
+      expect(system, isNot(contains('📖 من المحاضرة:')));
+      expect(system, contains('افترضته'));
+    });
+
+    test('every solution starts by making the question clear', () {
+      final system = StudyAiPrompts.solveSystem(withLecture: false, arabic: true);
+      expect(system.indexOf('## فهم السؤال'), lessThan(system.indexOf('## الحل خطوة بخطوة')));
+      expect(system, contains('## الإجابة'));
+    });
+
+    test('the prompt says which attachments are the question and which the lecture', () {
+      final prompt = StudyAiPrompts.solvePrompt(question: '', questionImages: 2, lectureFiles: 1);
+      expect(prompt, contains('(السؤال في الصور المرفقة)'));
+      expect(prompt, contains('أول 2 ملف مرفق صور السؤال'));
+      expect(prompt, contains('والـ 1 اللي بعدهم المحاضرة'));
+    });
+
+    test('a follow-up carries the earlier solution and the new question', () {
+      final prompt = StudyAiPrompts.solvePrompt(
+        question: 'احسب التيار',
+        lectureText: 'V = I × R',
+        history: const [AskTurn(question: 'احسب التيار', answer: 'I = V / R = 2 A')],
+        followUp: 'ليه قسمنا؟',
+      );
+      expect(prompt, contains('### الحل اللي اتشرح:'));
+      expect(prompt, contains('I = V / R = 2 A'));
+      expect(prompt, contains('ليه قسمنا؟'));
+      expect(prompt, contains('V = I × R'));
+    });
+  });
 }

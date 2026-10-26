@@ -768,6 +768,57 @@ class GeminiSummarizer implements Summarizer {
   }
 
   @override
+  Stream<String> solve({
+    required String question,
+    List<LectureFile> questionImages = const [],
+    String lectureText = '',
+    List<LectureFile> lectureFiles = const [],
+    List<AskTurn> history = const [],
+    String followUp = '',
+    required bool arabic,
+  }) async* {
+    _requireSignIn();
+    if (question.trim().isEmpty && questionImages.isEmpty) {
+      throw const SummarizerException('اكتب السؤال أو ارفع صورته الأول.');
+    }
+
+    // المتابعة نص بس: الحل اللي فات فيه السؤال متفسّر، ورفع الصور والمحاضرة
+    // تاني مع كل سؤال صغير هدر.
+    // A follow-up is text only: the earlier solution already restates the
+    // question, and re-sending pictures and the lecture with every small
+    // question is waste.
+    final followingUp = history.isNotEmpty;
+    final files = followingUp ? const <LectureFile>[] : [...questionImages, ...lectureFiles];
+    _requireFitting(files);
+
+    final inline = files.where((f) => !f.needsUpload).toList();
+    final uploads = <UploadedFile>[];
+    for (final file in files.where((f) => f.needsUpload)) {
+      uploads.add(await upload(file));
+    }
+
+    final withLecture = lectureText.trim().isNotEmpty || lectureFiles.isNotEmpty;
+    yield* _stream(
+      system: followingUp
+          ? StudyAiPrompts.solveFollowUpSystem(arabic: arabic)
+          : StudyAiPrompts.solveSystem(withLecture: withLecture, arabic: arabic),
+      prompt: StudyAiPrompts.solvePrompt(
+        question: question,
+        questionImages: followingUp ? 0 : questionImages.length,
+        lectureText: _capped(lectureText),
+        lectureFiles: followingUp ? 0 : lectureFiles.length,
+        history: history,
+        followUp: followUp,
+      ),
+      files: inline,
+      uploads: uploads,
+      // حل بخطوات محسوبة: الحرارة الواطية بتقلل الغلط في الحساب.
+      // A worked solution: a low temperature means fewer slips in the maths.
+      temperature: 0.2,
+    );
+  }
+
+  @override
   Future<List<GeneratedCard>> makeCards(String source, {int count = 8}) async {
     _requireSignIn();
     _requireText(source);

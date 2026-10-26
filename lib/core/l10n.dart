@@ -828,6 +828,35 @@ class AppL10n {
         'No device has notifications on — turn them on above first.',
       );
   String get dailyDigestFailed => _('الإرسال فشل.', 'Sending failed.');
+  // ------------------------------------------------- حل سؤال / solve
+  String get modeSolve => _('حل سؤال', 'Solve');
+  String get modeSolveHint => _(
+        'سؤال مش فاهمه؟ اكتبه أو صوّره: هتفهم هو بيسأل عن إيه، وحله خطوة بخطوة.',
+        'A question you do not follow? Type it or photograph it: see what it asks, then its solution step by step.',
+      );
+  String get solveWithLecture => _(
+        'الحل هيمشي على طريقة المحاضرة اللي رفعتها فوق — نفس الخطوات والرموز.',
+        'The solution will follow the lecture you uploaded above — the same steps and symbols.',
+      );
+  String get solveNoLecture => _(
+        'مفيش محاضرة مرفوعة، فالحل هيبقى بالطريقة المعتادة. ارفع المحاضرة في خطوة 1 فوق لو عايز الحل يمشي على طريقة الدكتور.',
+        'No lecture uploaded, so the usual method is used. Upload the lecture in step 1 above to follow your lecturer\'s method.',
+      );
+  String get solveQuestionHint => _('اكتب السؤال هنا…', 'Type the question here…');
+  String get solveAddPhoto => _('صوّر أو ارفع السؤال', 'Photo or file of the question');
+  String get solveButton => _('فهّمني وحلّه', 'Explain and solve');
+  String get solveAgain => _('حلّه من الأول', 'Solve again');
+  String get solving => _('بيفهم السؤال ويحله...', 'Reading the question and solving...');
+  String get needQuestion =>
+      _('اكتب السؤال أو ارفع صورته الأول.', 'Type the question or upload a photo of it first.');
+  String get solveFollowUpHint =>
+      _('مش فاهم حاجة في الحل؟ اسأل هنا…', 'Something in the solution unclear? Ask here…');
+  String get solveQuickSimpler => _('اشرحها بطريقة أبسط', 'Explain it more simply');
+  String get solveQuickStep => _('مش فاهم الخطوة اللي فيها القانون', 'I do not get the step with the formula');
+  String get solveQuickExample => _('اديني سؤال شبهه أحله بنفسي', 'Give me a similar one to try myself');
+  String get theQuestion => _('السؤال', 'Question');
+  String get theSolution => _('الحل', 'Solution');
+  String get send => _('ابعت', 'Send');
   String get modeSummary => _('تلخيص', 'Summary');
   String get modeExplain => _('شرح', 'Explain');
   String get modeReview => _('مراجعة', 'Review');

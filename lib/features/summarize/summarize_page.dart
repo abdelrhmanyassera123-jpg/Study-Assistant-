@@ -30,6 +30,7 @@ import 'summary_images.dart';
 import 'styled_result.dart';
 import 'summarizer.dart';
 import 'summarizer_provider.dart';
+import 'solve_panel.dart';
 
 class SummarizePage extends ConsumerStatefulWidget {
   const SummarizePage({super.key});
@@ -78,6 +79,12 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   /// المعروض دلوقتي: تلخيص أو شرح أو مراجعة.
   /// What is showing: summary, explanation or review.
   StudyOutput _mode = StudyOutput.summary;
+
+  /// تاب "حل سؤال" — مش ورقة من المحاضرة زي التلاتة التانيين، فبيتمسك لوحده.
+  /// The "solve a question" tab: not a page made from the lecture like the
+  /// other three, so it is kept apart.
+  bool _solving = false;
+  static const _solveTab = 'solve';
   ExplainLevel _level = ExplainLevel.normal;
 
   /// النص اللي اتلخص (تفريغ + نص ملزوق) — بيتحفظ عشان "إيه اللي اتنسى".
@@ -626,6 +633,29 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
       return null;
     }
     return text;
+  }
+
+  /// المحاضرة للحل: اللي مرفوع فوق (والتسجيلات بعد تفريغها)، أو فاضية.
+  /// The lecture for a solution: whatever is uploaded above (recordings once
+  /// transcribed), or nothing.
+  Future<SolveLecture?> _solveLecture() async {
+    if (!_hasInput) return const SolveLecture();
+    final summarizer = ref.read(activeSummarizerProvider);
+    setState(() {
+      _running = true;
+      _error = null;
+      _phase = null;
+      _progress = null;
+    });
+    final text = await _lectureText(summarizer);
+    if (!mounted) return null;
+    setState(() {
+      _running = false;
+      _phase = null;
+      _progress = null;
+    });
+    if (text == null) return null;
+    return SolveLecture(text: text, files: List.of(_docs));
   }
 
   Future<void> _generate() async {
@@ -1238,47 +1268,69 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                   // One lecture, three things out of it. Each is made only when
                   // asked for: the quota is shared, and all three at once would
                   // cost three times as much.
-                  SegmentedButton<StudyOutput>(
-                    showSelectedIcon: false,
-                    segments: [
-                      ButtonSegment(
-                        value: StudyOutput.summary,
-                        icon: const Icon(Icons.notes_rounded, size: 18),
-                        label: Text(l.modeSummary),
-                      ),
-                      ButtonSegment(
-                        value: StudyOutput.explain,
-                        icon: const Icon(Icons.school_outlined, size: 18),
-                        label: Text(l.modeExplain),
-                      ),
-                      ButtonSegment(
-                        value: StudyOutput.review,
-                        icon: const Icon(Icons.checklist_rounded, size: 18),
-                        label: Text(l.modeReview),
-                      ),
-                    ],
-                    selected: {_mode},
-                    onSelectionChanged: _running
-                        ? null
-                        : (s) => setState(() {
-                              _mode = s.first;
-                              _error = null;
-                            }),
+                  // أربع تابات في موبايل ضيق: الأيقونات بتتشال عشان الكلام يبان.
+                  // Four tabs on a narrow phone: the icons go so the words fit.
+                  LayoutBuilder(
+                    builder: (context, box) {
+                      final icons = box.maxWidth >= 460;
+                      Icon? icon(IconData d) => icons ? Icon(d, size: 18) : null;
+                      return SegmentedButton<Object>(
+                        showSelectedIcon: false,
+                        style: icons
+                            ? null
+                            : const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+                              ),
+                        segments: [
+                          ButtonSegment(
+                            value: StudyOutput.summary,
+                            icon: icon(Icons.notes_rounded),
+                            label: Text(l.modeSummary, softWrap: false),
+                          ),
+                          ButtonSegment(
+                            value: StudyOutput.explain,
+                            icon: icon(Icons.school_outlined),
+                            label: Text(l.modeExplain, softWrap: false),
+                          ),
+                          ButtonSegment(
+                            value: StudyOutput.review,
+                            icon: icon(Icons.checklist_rounded),
+                            label: Text(l.modeReview, softWrap: false),
+                          ),
+                          ButtonSegment(
+                            value: _solveTab,
+                            icon: icon(Icons.psychology_alt_outlined),
+                            label: Text(l.modeSolve, softWrap: false),
+                          ),
+                        ],
+                        selected: {_solving ? _solveTab : _mode},
+                        onSelectionChanged: _running
+                            ? null
+                            : (s) => setState(() {
+                                  _solving = s.first == _solveTab;
+                                  if (s.first is StudyOutput) _mode = s.first as StudyOutput;
+                                  _error = null;
+                                }),
+                      );
+                    },
                   ),
                   const SizedBox(height: Insets.sm),
                   Text(
-                    switch (_mode) {
-                      StudyOutput.summary => l.modeSummaryHint,
-                      StudyOutput.explain => l.modeExplainHint,
-                      StudyOutput.review => l.modeReviewHint,
-                    },
+                    _solving
+                        ? l.modeSolveHint
+                        : switch (_mode) {
+                            StudyOutput.summary => l.modeSummaryHint,
+                            StudyOutput.explain => l.modeExplainHint,
+                            StudyOutput.review => l.modeReviewHint,
+                          },
                     textAlign: TextAlign.center,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                  if (_mode == StudyOutput.explain) ...[
+                  if (_mode == StudyOutput.explain && !_solving) ...[
                     const SizedBox(height: Insets.md),
                     Text(l.explainLevel, style: Theme.of(context).textTheme.labelLarge),
                     const SizedBox(height: Insets.sm),
@@ -1294,6 +1346,25 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                           _running ? null : (s) => setState(() => _level = s.first),
                     ),
                   ],
+                  if (_solving) ...[
+                    const SizedBox(height: Insets.lg),
+                    // التسجيلات بتتفرّغ الأول لو الحل هيمشي على المحاضرة.
+                    // Recordings are transcribed first when the solution
+                    // follows the lecture.
+                    if (_running && _phase != null) ...[
+                      ProgressBar(label: _phase!, value: _progress),
+                      const SizedBox(height: Insets.lg),
+                    ],
+                    if (_error != null) ...[
+                      _ErrorBox(error: _error!),
+                      const SizedBox(height: Insets.lg),
+                    ],
+                    SolvePanel(
+                      hasLecture: hasInput,
+                      loadLecture: _solveLecture,
+                      subjectId: _subjectId,
+                    ),
+                  ] else ...[
                   const SizedBox(height: Insets.lg),
 
                   if (_running)
@@ -1372,6 +1443,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                       onPageChanged: (page) => setState(() => _pages[_mode] = page),
                       onSaveNote: _saveAsNote,
                     ),
+                  ],
                   ],
 
                 ],
