@@ -775,6 +775,7 @@ class GeminiSummarizer implements Summarizer {
     List<LectureFile> lectureFiles = const [],
     List<AskTurn> history = const [],
     String followUp = '',
+    List<LectureFile> followUpImages = const [],
     required bool arabic,
   }) async* {
     _requireSignIn();
@@ -782,13 +783,14 @@ class GeminiSummarizer implements Summarizer {
       throw const SummarizerException('اكتب السؤال أو ارفع صورته الأول.');
     }
 
-    // المتابعة نص بس: الحل اللي فات فيه السؤال متفسّر، ورفع الصور والمحاضرة
-    // تاني مع كل سؤال صغير هدر.
-    // A follow-up is text only: the earlier solution already restates the
-    // question, and re-sending pictures and the lecture with every small
-    // question is waste.
+    // المتابعة من غير صور السؤال والمحاضرة: الحل اللي فات فيه السؤال متفسّر،
+    // ورفعهم تاني مع كل سؤال صغير هدر. صور المتابعة نفسها بس هي اللي بتتبعت.
+    // A follow-up goes without the question's pictures and the lecture: the
+    // earlier solution already restates the question, and re-sending them
+    // with every small question is waste. Only the follow-up's own pictures
+    // go.
     final followingUp = history.isNotEmpty;
-    final files = followingUp ? const <LectureFile>[] : [...questionImages, ...lectureFiles];
+    final files = followingUp ? followUpImages : [...questionImages, ...lectureFiles];
     _requireFitting(files);
 
     final inline = files.where((f) => !f.needsUpload).toList();
@@ -809,6 +811,7 @@ class GeminiSummarizer implements Summarizer {
         lectureFiles: followingUp ? 0 : lectureFiles.length,
         history: history,
         followUp: followUp,
+        followUpImages: followingUp ? followUpImages.length : 0,
       ),
       files: inline,
       uploads: uploads,

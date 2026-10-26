@@ -569,6 +569,7 @@ ${arabic ? '- اكتب بالعربي البسيط.' : '- Write in plain English
     int lectureFiles = 0,
     List<AskTurn> history = const [],
     String followUp = '',
+    int followUpImages = 0,
   }) {
     final b = StringBuffer();
     b.writeln('### السؤال:');
@@ -592,11 +593,14 @@ ${arabic ? '- اكتب بالعربي البسيط.' : '- Write in plain English
         ..writeln('### ${turn == history.first ? 'الحل اللي اتشرح' : 'سؤال متابعة: ${turn.question}'}:')
         ..writeln(turn.answer.trim());
     }
-    if (followUp.trim().isNotEmpty) {
+    if (followUp.trim().isNotEmpty || followUpImages > 0) {
       b
         ..writeln()
         ..writeln('### سؤال الطالب دلوقتي:')
-        ..writeln(followUp.trim());
+        ..writeln(followUp.trim().isEmpty ? '(السؤال في الصورة المرفقة)' : followUp.trim());
+      if (followUpImages > 0) {
+        b.writeln('(مرفق معاه $followUpImages صورة — بصّ عليها)');
+      }
     }
     return b.toString();
   }

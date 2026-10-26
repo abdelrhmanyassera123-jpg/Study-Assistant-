@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/math_text.dart';
+import '../../core/paste_images.dart';
 import '../../core/settings.dart';
 import '../../data/providers.dart';
 import '../../models/models.dart';
@@ -61,7 +64,19 @@ class SolvePanel extends ConsumerStatefulWidget {
 class _SolvePanelState extends ConsumerState<SolvePanel> {
   final _question = TextEditingController();
   final _follow = TextEditingController();
+  final _questionFocus = FocusNode();
+  final _followFocus = FocusNode();
   final List<LectureFile> _images = [];
+
+  /// صور سؤال المتابعة اللي جاي — بتتبعت معاه وبعدين تتمسح.
+  /// Pictures for the next follow-up; sent with it, then cleared.
+  final List<LectureFile> _followImages = [];
+
+  /// صور كل سؤال متابعة اتبعت، عشان تتعرض جنبه.
+  /// Each sent follow-up's picture count, shown beside it.
+  final List<int> _followImageCounts = [];
+
+  StreamSubscription<List<PastedImage>>? _pasteSub;
 
   String? _solution;
   final List<AskTurn> _followUps = [];
@@ -76,10 +91,60 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
   int _run = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // صورة اتلصقت (Ctrl+V أو "لصق") وخانة من خانات الحل عليها الفوكس: بتتضاف
+    // للسؤال، أو لسؤال المتابعة لو ده اللي بيتكتب.
+    // A picture pasted (Ctrl+V or "Paste") while one of the solve fields has
+    // focus: added to the question, or to the follow-up if that is the one
+    // being typed.
+    _pasteSub = PasteImages.stream.listen((pasted) {
+      if (_running) return;
+      if (_followFocus.hasFocus && _solution != null) {
+        _addPasted(pasted, _followImages);
+      } else if (_questionFocus.hasFocus) {
+        _addPasted(pasted, _images);
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _pasteSub?.cancel();
     _question.dispose();
     _follow.dispose();
+    _questionFocus.dispose();
+    _followFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _addPasted(List<PastedImage> pasted, List<LectureFile> into) async {
+    for (final p in pasted) {
+      var ready = PickedFile(name: p.name, bytes: p.bytes, mimeType: p.mimeType);
+      try {
+        ready = await shrinkImage(ready);
+      } catch (_) {}
+      into.add(LectureFile(
+        name: ready.name,
+        mimeType: ready.mimeType.startsWith('image/') ? ready.mimeType : 'image/png',
+        bytes: ready.bytes,
+      ));
+    }
+    if (!mounted) return;
+    setState(() {});
+    showSnack(context, context.l.imagesPasted(pasted.length));
+  }
+
+  /// زرار "الصق": للموبايل لما الكيبورد ما بيلصقش الصورة جوه الخانة.
+  /// The "paste" button: for phones whose keyboard will not paste a picture
+  /// into the field.
+  Future<void> _pasteButton(List<LectureFile> into) async {
+    final l = context.l;
+    final pasted = await PasteImages.readClipboard();
+    if (!mounted) return;
+    if (pasted == null) return showSnack(context, l.pasteUnsupported);
+    if (pasted.isEmpty) return showSnack(context, l.clipboardNoImage);
+    await _addPasted(pasted, into);
   }
 
   bool get _arabic => ref.read(settingsProvider).languageCode == 'ar';
@@ -125,6 +190,7 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
       _error = null;
       _solution = null;
       _followUps.clear();
+      _followImageCounts.clear();
     });
 
     final lecture = await widget.loadLecture();
@@ -151,14 +217,17 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
   Future<void> _ask([String? preset]) async {
     final q = (preset ?? _follow.text).trim();
     final solution = _solution;
-    if (q.isEmpty || solution == null || _running) return;
+    final images = List.of(_followImages);
+    if ((q.isEmpty && images.isEmpty) || solution == null || _running) return;
     final run = ++_run;
     final history = [AskTurn(question: _questionText, answer: solution), ..._followUps];
     setState(() {
       _running = true;
       _error = null;
       _follow.clear();
+      _followImages.clear();
       _followUps.add(AskTurn(question: q, answer: ''));
+      _followImageCounts.add(images.length);
     });
     final index = _followUps.length - 1;
 
@@ -169,6 +238,7 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
             lectureText: _lecture.text,
             history: history,
             followUp: q,
+            followUpImages: images,
             arabic: _arabic,
           ),
       (text) => _followUps[index] = AskTurn(question: q, answer: text),
@@ -236,6 +306,7 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
         const SizedBox(height: Insets.md),
         TextField(
           controller: _question,
+          focusNode: _questionFocus,
           minLines: 3,
           maxLines: 8,
           enabled: !_running,
@@ -251,6 +322,11 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
               onPressed: _running ? null : _addImages,
               icon: const Icon(Icons.add_a_photo_outlined, size: 18),
               label: Text(l.solveAddPhoto),
+            ),
+            OutlinedButton.icon(
+              onPressed: _running ? null : () => _pasteButton(_images),
+              icon: const Icon(Icons.content_paste_rounded, size: 18),
+              label: Text(l.pasteImage),
             ),
             for (final img in _images)
               InputChip(
@@ -291,7 +367,7 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
         if (_solution != null) ...[
           const SizedBox(height: Insets.xl),
           _Bubble(child: StudyText(_solution!)),
-          for (final t in _followUps) ...[
+          for (var i = 0; i < _followUps.length; i++) ...[
             const SizedBox(height: Insets.md),
             Align(
               alignment: AlignmentDirectional.centerEnd,
@@ -302,17 +378,28 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Text(t.question, style: TextStyle(color: scheme.onPrimaryContainer)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_followUps[i].question.isNotEmpty)
+                      Text(_followUps[i].question, style: TextStyle(color: scheme.onPrimaryContainer)),
+                    if (i < _followImageCounts.length && _followImageCounts[i] > 0)
+                      Text(
+                        '📎 ${l.imagesCount(_followImageCounts[i])}',
+                        style: TextStyle(color: scheme.onPrimaryContainer),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: Insets.sm),
             _Bubble(
-              child: t.answer.isEmpty
+              child: _followUps[i].answer.isEmpty
                   ? const Padding(
                       padding: EdgeInsets.all(Insets.sm),
                       child: LinearProgressIndicator(),
                     )
-                  : StudyText(t.answer),
+                  : StudyText(_followUps[i].answer),
             ),
           ],
           if (!_running) ...[
@@ -326,14 +413,35 @@ class _SolvePanelState extends ConsumerState<SolvePanel> {
               ],
             ),
             const SizedBox(height: Insets.sm),
+            if (_followImages.isNotEmpty) ...[
+              Wrap(
+                spacing: Insets.sm,
+                runSpacing: Insets.sm,
+                children: [
+                  for (final img in _followImages)
+                    InputChip(
+                      avatar: const Icon(Icons.image_outlined, size: 18),
+                      label: Text(img.name, overflow: TextOverflow.ellipsis),
+                      onDeleted: () => setState(() => _followImages.remove(img)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: Insets.sm),
+            ],
             TextField(
               controller: _follow,
+              focusNode: _followFocus,
               minLines: 1,
               maxLines: 4,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _ask(),
               decoration: InputDecoration(
                 hintText: l.solveFollowUpHint,
+                prefixIcon: IconButton(
+                  tooltip: l.pasteImage,
+                  onPressed: () => _pasteButton(_followImages),
+                  icon: const Icon(Icons.content_paste_rounded),
+                ),
                 suffixIcon: IconButton(
                   tooltip: l.send,
                   onPressed: () => _ask(),

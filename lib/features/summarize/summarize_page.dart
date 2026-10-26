@@ -9,6 +9,7 @@ import '../../core/design.dart';
 import '../../core/l10n.dart';
 import '../../core/launch_intent.dart';
 import '../../core/math_text.dart';
+import '../../core/paste_images.dart';
 import '../../core/settings.dart';
 import '../../core/share_target.dart';
 import '../../data/providers.dart';
@@ -41,6 +42,13 @@ class SummarizePage extends ConsumerStatefulWidget {
 
 class _SummarizePageState extends ConsumerState<SummarizePage> {
   final _lecture = TextEditingController();
+  final _lectureFocus = FocusNode();
+
+  /// صورة اتلصقت وخانة نص المحاضرة عليها الفوكس: بتتضاف للمحاضرة (سلايد
+  /// متصورة، صورة سبورة).
+  /// A picture pasted with the lecture-text field in focus is added to the
+  /// lecture (a captured slide, a board photo).
+  StreamSubscription<List<PastedImage>>? _pasteSub;
 
   ExtractedDocument? _extracted;
 
@@ -116,6 +124,13 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
   @override
   void initState() {
     super.initState();
+    _pasteSub = PasteImages.stream.listen((pasted) async {
+      if (!_lectureFocus.hasFocus || _running) return;
+      for (final p in pasted) {
+        await _addPickedFile(PickedFile(name: p.name, bytes: p.bytes, mimeType: p.mimeType));
+      }
+      if (mounted) showSnack(context, context.l.imagesPasted(pasted.length));
+    });
     // ملف جاي من مشاركة نظام (Android share sheet) — لو موجود، بيتضاف بعد
     // أول فريم بنفس منطق اختيار الملف اليدوي.
     // A file that arrived via the OS share sheet — if there is one, it is
@@ -190,6 +205,8 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
     _tick?.cancel();
     _autoStop?.cancel();
     _recorder?.dispose();
+    _pasteSub?.cancel();
+    _lectureFocus.dispose();
     _lecture.dispose();
     super.dispose();
   }
@@ -1169,6 +1186,7 @@ class _SummarizePageState extends ConsumerState<SummarizePage> {
                   const SizedBox(height: Insets.lg),
                   TextField(
                     controller: _lecture,
+                    focusNode: _lectureFocus,
                     maxLines: 8,
                     minLines: 4,
                     // الكتابة مش بتلغي المرفقات: ممكن ترفع السلايدات وتكتب

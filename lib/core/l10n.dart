@@ -854,6 +854,18 @@ class AppL10n {
   String get solveQuickSimpler => _('اشرحها بطريقة أبسط', 'Explain it more simply');
   String get solveQuickStep => _('مش فاهم الخطوة اللي فيها القانون', 'I do not get the step with the formula');
   String get solveQuickExample => _('اديني سؤال شبهه أحله بنفسي', 'Give me a similar one to try myself');
+  String get pasteImage => _('الصق صورة', 'Paste image');
+  String imagesPasted(int n) => _(
+        n == 1 ? 'اتضافت الصورة' : 'اتضافت $n صور',
+        n == 1 ? 'Image added' : '$n images added',
+      );
+  String imagesCount(int n) => _(n == 1 ? 'صورة' : '$n صور', n == 1 ? '1 image' : '$n images');
+  String get clipboardNoImage =>
+      _('مفيش صورة منسوخة — انسخ الصورة الأول.', 'No image on the clipboard — copy one first.');
+  String get pasteUnsupported => _(
+        'المتصفح ده مش بيسمح بقراية الحافظة — الصق بـ Ctrl+V جوه الخانة، أو ارفع الصورة.',
+        'This browser will not read the clipboard — paste with Ctrl+V in the field, or upload the image.',
+      );
   String get theQuestion => _('السؤال', 'Question');
   String get theSolution => _('الحل', 'Solution');
   String get send => _('ابعت', 'Send');

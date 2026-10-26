@@ -363,10 +363,12 @@ abstract class Summarizer {
   /// streaming as it writes. With a lecture ([lectureText] or
   /// [lectureFiles]), the solution follows its method.
   ///
-  /// لو [history] مش فاضي ده سؤال متابعة ([followUp]) على حل اتعمل: من غير
-  /// ملفات، والحل اللي فات بيوصل كنص.
+  /// لو [history] مش فاضي ده سؤال متابعة ([followUp]) على حل اتعمل: الحل
+  /// اللي فات بيوصل كنص، والملفات الوحيدة هي صور المتابعة نفسها
+  /// ([followUpImages]).
   /// With [history], this is a follow-up ([followUp]) on a solution already
-  /// given: no files, the earlier solution travels as text.
+  /// given: the earlier solution travels as text, and the only files are the
+  /// follow-up's own pictures ([followUpImages]).
   Stream<String> solve({
     required String question,
     List<LectureFile> questionImages,
@@ -374,6 +376,7 @@ abstract class Summarizer {
     List<LectureFile> lectureFiles,
     List<AskTurn> history,
     String followUp,
+    List<LectureFile> followUpImages,
     required bool arabic,
   });
 

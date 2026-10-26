@@ -267,6 +267,19 @@ void main() {
       expect(prompt, contains('والـ 1 اللي بعدهم المحاضرة'));
     });
 
+    // صورة اتلصقت في خانة المتابعة من غير كلام: السؤال هو الصورة.
+    // A picture pasted into the follow-up box with no words: the picture is
+    // the question.
+    test('a follow-up can be just a pasted picture', () {
+      final prompt = StudyAiPrompts.solvePrompt(
+        question: 'احسب التيار',
+        history: const [AskTurn(question: 'احسب التيار', answer: 'I = 2 A')],
+        followUpImages: 1,
+      );
+      expect(prompt, contains('(السؤال في الصورة المرفقة)'));
+      expect(prompt, contains('مرفق معاه 1 صورة'));
+    });
+
     test('a follow-up carries the earlier solution and the new question', () {
       final prompt = StudyAiPrompts.solvePrompt(
         question: 'احسب التيار',
